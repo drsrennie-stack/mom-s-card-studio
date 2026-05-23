@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Christine's Skivvez Studio</title>
-<meta name="description" content="A studio for designing die-cut greeting cards: patterns, AI artwork, photos, and text.">
+<meta name="description" content="A studio for designing die-cut greeting cards: AI artwork, photos, and text.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Great+Vibes&family=Pinyon+Script&family=Pacifico&family=Satisfy&family=Cookie&family=Lobster&family=Playfair+Display:wght@400;700&family=Cinzel+Decorative:wght@400;700&family=Josefin+Sans:wght@400;700&family=Philosopher:wght@400;700&family=Italiana&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -56,7 +56,7 @@ const { useState, useEffect, useRef, useCallback } = React;
 /* ── design service ───────────────────────────────────────────── */
 /* The Cloudflare Worker that safely holds the Anthropic API key.   */
 const AI_ENDPOINT = "https://skivves-ai.dr-srennie.workers.dev";
-/* If AI ever returns a model error, change this one line.          */
+/* If AI returns a model error, change this one line.               */
 const AI_MODEL = "claude-sonnet-4-6";
 
 /* ── brand tokens ─────────────────────────────────────────────── */
@@ -95,32 +95,6 @@ const FONTS = [
   { name:"Italiana",          family:"Italiana" },
 ];
 
-const CATS = [
-  { id:"floral",    label:"Floral",    icon:"❀" },
-  { id:"geometric", label:"Geometric", icon:"◈" },
-  { id:"holiday",   label:"Holiday",   icon:"✦" },
-  { id:"frame",     label:"Frames",    icon:"▢" },
-];
-
-const PATS = {
-  floral:    [{id:"daisy",    label:"Daisy Field"},
-              {id:"roses",    label:"Rose Cluster"},
-              {id:"vines",    label:"Vines and Leaves"},
-              {id:"magnolia", label:"Magnolia Blooms"}],
-  geometric: [{id:"honeycomb",label:"Honeycomb"},
-              {id:"mandala",  label:"Mandala"},
-              {id:"diagonal", label:"Diagonal Stripes"},
-              {id:"argyle",   label:"Argyle Diamonds"}],
-  holiday:   [{id:"snowflake",label:"Snowflake"},
-              {id:"hearts",   label:"Hearts"},
-              {id:"stars",    label:"Starburst"},
-              {id:"tree",     label:"Pine Tree"}],
-  frame:     [{id:"nested",   label:"Nested Frame"},
-              {id:"scallop",  label:"Scalloped Edge"},
-              {id:"flourish", label:"Corner Flourish"},
-              {id:"ribbon",   label:"Ribbon Border"}],
-};
-
 const SIZES = {
   p57:{ label:"5 x 7  Portrait",  W:350, H:490 },
   sq: { label:"5 x 5  Square",    W:420, H:420 },
@@ -156,10 +130,6 @@ const ART_STYLES = [
 ];
 
 /* ── helpers ──────────────────────────────────────────────────── */
-function mkRng(seed){
-  let s=seed>>>0;
-  return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
-}
 function hexToRgb(h){
   h=h.replace("#","");
   if(h.length===3) h=h.split("").map(x=>x+x).join("");
@@ -201,18 +171,28 @@ function extractSVG(raw){
   return m?m[0]:null;
 }
 async function callAI(system,content,maxTokens){
-  const res=await fetch(AI_ENDPOINT,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:AI_MODEL, max_tokens:maxTokens, system:system,
-      messages:[{role:"user",content:content}]
-    })
-  });
-  const data=await res.json();
+  let res;
+  try{
+    res=await fetch(AI_ENDPOINT,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:AI_MODEL, max_tokens:maxTokens, system:system,
+        messages:[{role:"user",content:content}]
+      })
+    });
+  }catch(e){
+    throw new Error("Could not reach the design service. Make sure you opened the live web page, not the file saved on your computer.");
+  }
+  let data=null;
+  try{ data=await res.json(); }catch(e){}
   if(data&&Array.isArray(data.content))
     return data.content.filter(b=>b.type==="text").map(b=>b.text).join("");
-  return "";
+  if(data&&data.error){
+    const m=(typeof data.error==="string")?data.error:(data.error.message||"");
+    throw new Error(m||("The design service returned an error, status "+res.status+"."));
+  }
+  throw new Error("The design service returned an error, status "+(res?res.status:"unknown")+".");
 }
 function aiSystem(style,c1,c2,c3){
   return `You are a master illustrator who draws directly in SVG for a line of handmade greeting cards. Your work is clean, confident and beautiful. It must never look like a clip-art icon or a flat diagram.
@@ -249,10 +229,8 @@ async function genSVG(description,styleId,c1,c2,c3,image){
   }else{
     content=[{type:"text",text:`Create the hero illustration for a handmade greeting card.\nSubject: "${description}"\nStyle: ${style.label}.\nMake it genuinely beautiful, detailed and elegant. Use ${c1} dominant, ${c2} secondary, ${c3} accent.`}];
   }
-  try{
-    const raw=await callAI(sys,content,8000);
-    return extractSVG(raw);
-  }catch(e){ return null; }
+  const raw=await callAI(sys,content,8000);
+  return extractSVG(raw);
 }
 async function refineSVG(svg,styleId,c1,c2,c3){
   const style=ART_STYLES.find(s=>s.id===styleId)||ART_STYLES[0];
@@ -340,236 +318,6 @@ function stylizePhoto(img,mode,strength,c1,c2,c3){
   return cv.toDataURL("image/png");
 }
 
-/* ── drawing primitives ───────────────────────────────────────── */
-function drawLeaf(ctx,x,y,len,angle,color){
-  ctx.save();ctx.translate(x,y);ctx.rotate(angle);
-  ctx.beginPath();ctx.moveTo(0,0);
-  ctx.bezierCurveTo(len*.25,-len*.28,len*.75,-len*.28,len,0);
-  ctx.bezierCurveTo(len*.75,len*.28,len*.25,len*.28,0,0);
-  ctx.fillStyle=color;ctx.fill();ctx.restore();
-}
-function drawStar(ctx,cx,cy,r,pts,fill,stroke){
-  ctx.beginPath();
-  for(let i=0;i<pts*2;i++){
-    const a=(i/(pts*2))*Math.PI*2-Math.PI/2,rad=i%2===0?r:r*.42;
-    i===0?ctx.moveTo(cx+Math.cos(a)*rad,cy+Math.sin(a)*rad):ctx.lineTo(cx+Math.cos(a)*rad,cy+Math.sin(a)*rad);
-  }
-  ctx.closePath();ctx.fillStyle=fill;ctx.fill();
-  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.8;ctx.stroke();}
-}
-function drawHeart(ctx,cx,cy,r,fill){
-  ctx.save();ctx.translate(cx,cy);ctx.scale(r/28,r/28);
-  ctx.beginPath();ctx.moveTo(0,-8);
-  ctx.bezierCurveTo(-28,-28,-28,12,0,28);ctx.bezierCurveTo(28,12,28,-28,0,-8);
-  ctx.closePath();ctx.fillStyle=fill;ctx.fill();ctx.restore();
-}
-
-/* ── floral ───────────────────────────────────────────────────── */
-function pDaisy(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed),n=density*5+8;
-  for(let i=0;i<n;i++) drawLeaf(ctx,r()*W,r()*H,14+r()*18,r()*Math.PI*2,c3+"88");
-  for(let i=0;i<n;i++){
-    const cx=r()*W,cy=r()*H,rad=13+r()*18,col=[c1,c2,c3][i%3],ctr=[c2,c3,c1][i%3];
-    for(let p=0;p<8;p++){
-      const a=(p/8)*Math.PI*2;
-      ctx.beginPath();ctx.ellipse(cx+Math.cos(a)*rad*.62,cy+Math.sin(a)*rad*.62,rad*.3,rad*.17,a,0,Math.PI*2);
-      ctx.fillStyle=col+"CC";ctx.fill();
-    }
-    ctx.beginPath();ctx.arc(cx,cy,rad*.23,0,Math.PI*2);ctx.fillStyle=ctr;ctx.fill();
-  }
-}
-function pRoses(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed);
-  function rose(cx,cy,rad,col1,col2){
-    for(let i=0;i<5;i++){
-      const a=(i/5)*Math.PI*2-Math.PI/2;
-      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
-      ctx.beginPath();ctx.ellipse(0,-rad*.58,rad*.34,rad*.48,0,0,Math.PI*2);
-      ctx.fillStyle=col1+"BB";ctx.fill();ctx.restore();
-    }
-    for(let i=0;i<5;i++){
-      const a=(i/5)*Math.PI*2+Math.PI/5-Math.PI/2;
-      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
-      ctx.beginPath();ctx.ellipse(0,-rad*.34,rad*.22,rad*.28,0,0,Math.PI*2);
-      ctx.fillStyle=col2+"DD";ctx.fill();ctx.restore();
-    }
-    ctx.beginPath();ctx.arc(cx,cy,rad*.14,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
-  }
-  for(let i=0;i<density*3+5;i++) drawLeaf(ctx,r()*W,r()*H,12+r()*20,r()*Math.PI*2,c3+"88");
-  rose(W/2,H/2,Math.min(W,H)*.2,c1,c2);
-  const n=density*2+4;
-  for(let i=0;i<n;i++){
-    const a=(i/n)*Math.PI*2,d=Math.min(W,H)*(.22+r()*.2);
-    rose(W/2+Math.cos(a)*d,H/2+Math.sin(a)*d,14+r()*22,i%2===0?c1:c3,c2);
-  }
-}
-function pVines(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed),nv=Math.floor(density*.7)+2;
-  for(let v=0;v<nv;v++){
-    const sx=r()*W,sy=r()*H,ex=r()*W,ey=r()*H,cx1=r()*W,cy1=r()*H,cx2=r()*W,cy2=r()*H;
-    ctx.beginPath();ctx.moveTo(sx,sy);ctx.bezierCurveTo(cx1,cy1,cx2,cy2,ex,ey);
-    ctx.strokeStyle=c3+"BB";ctx.lineWidth=2;ctx.stroke();
-    const lc=density+4;
-    for(let l=0;l<lc;l++){
-      const t=l/lc,mt=1-t;
-      const bx=mt*mt*mt*sx+3*mt*mt*t*cx1+3*mt*t*t*cx2+t*t*t*ex;
-      const by=mt*mt*mt*sy+3*mt*mt*t*cy1+3*mt*t*t*cy2+t*t*t*ey;
-      const side=l%2===0?1:-1,len=10+r()*14;
-      const ang=Math.atan2(ey-sy,ex-sx)+side*(Math.PI/3+r()*.3);
-      drawLeaf(ctx,bx,by,len,ang,(l%2===0?c3:c1)+"BB");
-      if(l%3===0){ctx.beginPath();ctx.arc(bx,by,4,0,Math.PI*2);ctx.fillStyle=c2;ctx.fill();}
-    }
-  }
-}
-function pMagnolia(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed);
-  function mag(cx,cy,rad,col1,col2){
-    for(let i=0;i<6;i++){
-      const a=(i/6)*Math.PI*2-Math.PI/2;
-      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
-      ctx.beginPath();ctx.moveTo(0,0);
-      ctx.bezierCurveTo(-rad*.3,-rad*.35,-rad*.2,-rad*.85,0,-rad);
-      ctx.bezierCurveTo(rad*.2,-rad*.85,rad*.3,-rad*.35,0,0);
-      ctx.fillStyle=col1+"CC";ctx.fill();
-      ctx.strokeStyle=col2+"44";ctx.lineWidth=.5;ctx.stroke();ctx.restore();
-    }
-    ctx.beginPath();ctx.arc(cx,cy,rad*.16,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
-  }
-  for(let i=0;i<density*3+6;i++) drawLeaf(ctx,r()*W,r()*H,15+r()*22,r()*Math.PI*2,c3+"77");
-  mag(W/2,H/2,Math.min(W,H)*.24,c1,c2);
-  const n=density*2+4;
-  for(let i=0;i<n;i++){
-    const a=r()*Math.PI*2,d=Math.min(W,H)*(.2+r()*.3),rad=Math.min(W,H)*(.08+r()*.13);
-    mag(W/2+Math.cos(a)*d,H/2+Math.sin(a)*d,rad,i%2===0?c3:c1,c2);
-  }
-}
-
-/* ── geometric ────────────────────────────────────────────────── */
-function pHoneycomb(ctx,W,H,c1,c2,c3,density){
-  const sz=Math.max(12,48-density*4),sqH=sz*Math.sqrt(3),cols=[c1,c2,c3];
-  for(let row=-1;row<H/sqH+2;row++){
-    for(let col=-1;col<W/(sz*1.5)+2;col++){
-      const x=col*sz*1.5,y=row*sqH+(col%2===0?0:sqH/2),ci=Math.abs((row*3+col)%3);
-      ctx.beginPath();
-      for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2+Math.PI/6,px=x+Math.cos(a)*sz*.92,py=y+Math.sin(a)*sz*.92;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
-      ctx.closePath();ctx.fillStyle=cols[ci]+"55";ctx.fill();ctx.strokeStyle=cols[ci]+"BB";ctx.lineWidth=1;ctx.stroke();
-    }
-  }
-}
-function pMandala(ctx,W,H,c1,c2,c3,density){
-  const cx=W/2,cy=H/2,maxR=Math.min(W,H)*.44,layers=Math.min(8,density+3),cols=[c1,c2,c3];
-  for(let l=layers;l>=1;l--){
-    const r=(l/layers)*maxR,innerR=((l-1)/layers)*maxR,midR=(r+innerR)/2,numP=l*6,col=cols[(l-1)%3];
-    for(let i=0;i<numP;i++){
-      const a=(i/numP)*Math.PI*2,px=cx+Math.cos(a)*midR,py=cy+Math.sin(a)*midR;
-      ctx.save();ctx.translate(px,py);ctx.rotate(a+Math.PI/2);
-      ctx.beginPath();ctx.ellipse(0,0,(r-innerR)*.45,maxR*.055,0,0,Math.PI*2);
-      ctx.fillStyle=col+(l%2===0?"88":"55");ctx.fill();ctx.strokeStyle=col+"AA";ctx.lineWidth=.5;ctx.stroke();ctx.restore();
-    }
-  }
-  ctx.beginPath();ctx.arc(cx,cy,maxR/layers*.7,0,Math.PI*2);ctx.fillStyle=c1;ctx.fill();
-}
-function pDiagonal(ctx,W,H,c1,c2,c3,density){
-  const sw=Math.max(18,52-density*4),cols=[c1+"99",c2+"99",c3+"99"],diag=Math.sqrt(W*W+H*H)+sw*4;
-  ctx.save();ctx.translate(W/2,H/2);ctx.rotate(Math.PI/4);
-  const n=Math.ceil(diag/sw)+2;
-  for(let i=-n;i<=n;i++){ctx.fillStyle=cols[Math.abs(i)%3];ctx.fillRect(i*sw-sw/2,-diag/2,sw,diag);}
-  ctx.restore();
-}
-function pArgyle(ctx,W,H,c1,c2,c3,density){
-  const ds=Math.max(28,75-density*5),cols=[c1,c2,c3];
-  for(let row=-2;row<H/(ds*.55)+2;row++){
-    for(let col=-2;col<W/ds+2;col++){
-      const cx=col*ds+(row%2===0?0:ds/2),cy=row*ds*.55,ci=Math.abs((row+col)%3);
-      ctx.save();ctx.translate(cx,cy);
-      ctx.beginPath();ctx.moveTo(0,-ds*.53);ctx.lineTo(ds*.46,0);ctx.lineTo(0,ds*.53);ctx.lineTo(-ds*.46,0);ctx.closePath();
-      ctx.fillStyle=cols[ci]+"66";ctx.fill();ctx.strokeStyle=cols[ci]+"AA";ctx.lineWidth=1;ctx.stroke();ctx.restore();
-    }
-  }
-}
-
-/* ── holiday ──────────────────────────────────────────────────── */
-function pSnowflake(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed);
-  function flake(cx,cy,rad,col1,col2){
-    for(let i=0;i<6;i++){
-      ctx.save();ctx.translate(cx,cy);ctx.rotate((i/6)*Math.PI*2);
-      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(rad,0);ctx.strokeStyle=col1;ctx.lineWidth=rad>20?2:1;ctx.stroke();
-      for(let b=1;b<=3;b++){
-        const bx=(b/4)*rad,bl=rad*.28*(1-b*.12);
-        ctx.beginPath();ctx.moveTo(bx,0);ctx.lineTo(bx+bl*.707,bl*.707);ctx.strokeStyle=col2;ctx.lineWidth=1;ctx.stroke();
-        ctx.beginPath();ctx.moveTo(bx,0);ctx.lineTo(bx+bl*.707,-bl*.707);ctx.stroke();
-      }
-      ctx.restore();
-    }
-    ctx.beginPath();ctx.arc(cx,cy,rad*.09,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
-  }
-  flake(W/2,H/2,Math.min(W,H)*.22,c1,c2);
-  for(let i=0;i<density*3+4;i++) flake(r()*W,r()*H,8+r()*28,i%2===0?c1:c3,c2);
-}
-function pHearts(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed),n=density*5+10,cols=[c1+"CC",c2+"CC",c3+"CC"];
-  for(let i=0;i<n;i++){ctx.save();ctx.translate(r()*W,r()*H);ctx.rotate(r()*.6-.3);drawHeart(ctx,0,0,10+r()*26,cols[i%3]);ctx.restore();}
-}
-function pStars(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed),cols=[c1,c2,c3];
-  drawStar(ctx,W/2,H/2,Math.min(W,H)*.22,8,c1+"BB",c2);
-  for(let i=0;i<density*4+8;i++) drawStar(ctx,r()*W,r()*H,8+r()*22,4+Math.floor(r()*4),cols[i%3]+"BB",cols[(i+1)%3]);
-}
-function pTree(ctx,W,H,c1,c2,c3,density,seed){
-  const r=mkRng(seed);
-  function tree(cx,cy,h){
-    ctx.fillStyle=c3;ctx.fillRect(cx-h*.06,cy+h*.55,h*.12,h*.2);
-    for(let l=0;l<4;l++){
-      const ly=cy-h*.8+l*h*.48,lw=h*.28+l*h*.22,lh=h*.38;
-      ctx.beginPath();ctx.moveTo(cx,ly);ctx.lineTo(cx-lw,ly+lh);ctx.lineTo(cx+lw,ly+lh);ctx.closePath();
-      ctx.fillStyle=(l%2===0?c1:c2)+"CC";ctx.fill();ctx.strokeStyle=c3+"88";ctx.lineWidth=.5;ctx.stroke();
-    }
-    drawStar(ctx,cx,cy-h*.86,h*.1,5,c2,c3);
-  }
-  tree(W/2,H/2,Math.min(W,H)*.55);
-  for(let i=0;i<density*2+3;i++) tree(r()*W,r()*H,25+r()*55);
-}
-
-/* ── frames ───────────────────────────────────────────────────── */
-function pNested(ctx,W,H,c1,c2,c3){
-  const cols=[c1,c2,c3,c1,c2,c3];
-  for(let l=0;l<6;l++){const m=(l+1)*Math.min(W,H)*.036;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=cols[l];ctx.lineWidth=1.5+(5-l)*.3;ctx.stroke();}
-}
-function pScallop(ctx,W,H,c1,c2,c3){
-  const r=14,cols=[c1,c2,c3];
-  function row(horiz,len,flip){
-    const n=Math.floor(len/(r*2)),off=(len-n*r*2)/2+r;
-    for(let i=0;i<n;i++){
-      const pos=off+i*r*2,cx=horiz?pos:(flip?W-r:r),cy=horiz?(flip?H-r:r):pos;
-      ctx.beginPath();ctx.arc(cx,cy,r*.9,0,Math.PI*2);ctx.fillStyle=cols[i%3]+"66";ctx.fill();ctx.strokeStyle=cols[i%3];ctx.lineWidth=1;ctx.stroke();
-    }
-  }
-  row(true,W,false);row(true,W,true);row(false,H,false);row(false,H,true);
-  const m=r*2+4;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=c1;ctx.lineWidth=1;ctx.stroke();
-}
-function pFlourish(ctx,W,H,c1,c2,c3){
-  function corner(ox,oy,sx,sy){
-    ctx.save();ctx.translate(ox,oy);ctx.scale(sx,sy);
-    ctx.beginPath();
-    for(let t=.3;t<=Math.PI*2.5;t+=.05){const rad=t*7;t===.3?ctx.moveTo(Math.cos(t)*rad,Math.sin(t)*rad):ctx.lineTo(Math.cos(t)*rad,Math.sin(t)*rad);}
-    ctx.strokeStyle=c1;ctx.lineWidth=1.5;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(55,0);ctx.strokeStyle=c2;ctx.lineWidth=1.2;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,55);ctx.stroke();
-    for(let d=1;d<=4;d++){ctx.beginPath();ctx.arc(d*13,0,2.5,0,Math.PI*2);ctx.fillStyle=c3;ctx.fill();ctx.beginPath();ctx.arc(0,d*13,2.5,0,Math.PI*2);ctx.fill();}
-    ctx.restore();
-  }
-  corner(0,0,1,1);corner(W,0,-1,1);corner(0,H,1,-1);corner(W,H,-1,-1);
-  const m=68;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=c1+"77";ctx.lineWidth=1;ctx.stroke();
-  ctx.beginPath();ctx.rect(m+4,m+4,W-(m+4)*2,H-(m+4)*2);ctx.strokeStyle=c2+"55";ctx.lineWidth=.8;ctx.stroke();
-}
-function pRibbon(ctx,W,H,c1,c2,c3){
-  const bw=22,cols=[c1,c2,c3],n=Math.ceil(Math.max(W,H)/bw)+1;
-  function strip(x,y,w,h,col){ctx.fillStyle=col+"88";ctx.fillRect(x,y,w,h);ctx.strokeStyle=col+"CC";ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);}
-  for(let i=0;i<n;i++){const ci=i%3;strip(i*bw,0,bw,bw,cols[ci]);strip(i*bw,H-bw,bw,bw,cols[(ci+1)%3]);strip(0,i*bw,bw,bw,cols[(ci+2)%3]);strip(W-bw,i*bw,bw,bw,cols[ci]);}
-  [bw+4,bw+8].forEach((m,i)=>{ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=[c1,c2][i];ctx.lineWidth=1.5-i*.5;ctx.stroke();});
-}
-
 /* ── text renderer ────────────────────────────────────────────── */
 function renderText(ctx,W,H,phrase,fontFamily,fontSize,bold,textColor,shadow,align,yFrac,spacing){
   if(!phrase.trim()) return;
@@ -588,35 +336,6 @@ function renderText(ctx,W,H,phrase,fontFamily,fontSize,bold,textColor,shadow,ali
     ctx.fillStyle=textColor;ctx.fillText(line,x,ly);
     ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetX=0;ctx.shadowOffsetY=0;
   });
-}
-
-/* ── pattern dispatch ─────────────────────────────────────────── */
-function renderPattern(canvas,cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern){
-  const{W,H}=SIZES[sizeKey];
-  canvas.width=W;canvas.height=H;
-  const ctx=canvas.getContext("2d");
-  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
-  if(noPattern) return;
-  const map={
-    "floral:daisy":()=>pDaisy(ctx,W,H,c1,c2,c3,density,seed),
-    "floral:roses":()=>pRoses(ctx,W,H,c1,c2,c3,density,seed),
-    "floral:vines":()=>pVines(ctx,W,H,c1,c2,c3,density,seed),
-    "floral:magnolia":()=>pMagnolia(ctx,W,H,c1,c2,c3,density,seed),
-    "geometric:honeycomb":()=>pHoneycomb(ctx,W,H,c1,c2,c3,density),
-    "geometric:mandala":()=>pMandala(ctx,W,H,c1,c2,c3,density),
-    "geometric:diagonal":()=>pDiagonal(ctx,W,H,c1,c2,c3,density),
-    "geometric:argyle":()=>pArgyle(ctx,W,H,c1,c2,c3,density),
-    "holiday:snowflake":()=>pSnowflake(ctx,W,H,c1,c2,c3,density,seed),
-    "holiday:hearts":()=>pHearts(ctx,W,H,c1,c2,c3,density,seed),
-    "holiday:stars":()=>pStars(ctx,W,H,c1,c2,c3,density,seed),
-    "holiday:tree":()=>pTree(ctx,W,H,c1,c2,c3,density,seed),
-    "frame:nested":()=>pNested(ctx,W,H,c1,c2,c3),
-    "frame:scallop":()=>pScallop(ctx,W,H,c1,c2,c3),
-    "frame:flourish":()=>pFlourish(ctx,W,H,c1,c2,c3),
-    "frame:ribbon":()=>pRibbon(ctx,W,H,c1,c2,c3),
-  };
-  const fn=map[`${cat}:${patId}`];
-  if(fn) fn();
 }
 
 async function loadDesign(placed){
@@ -663,17 +382,12 @@ function FlowerMark(){
 
 /* ── app ──────────────────────────────────────────────────────── */
 function App(){
-  const[noPattern,setNoPattern]=useState(false);
-  const[cat,setCat]       =useState("floral");
-  const[patId,setPatId]   =useState("daisy");
   const[palIdx,setPalIdx] =useState(0);
   const[c1,setC1]         =useState(PALETTES[0].c1);
   const[c2,setC2]         =useState(PALETTES[0].c2);
   const[c3,setC3]         =useState(PALETTES[0].c3);
-  const[density,setDensity]=useState(5);
   const[bg,setBg]         =useState("#FFFFFF");
   const[sizeKey,setSizeKey]=useState("p57");
-  const[seed,setSeed]     =useState(42);
   /* text */
   const[phrase,setPhrase] =useState("");
   const[fontFam,setFontFam]=useState("Dancing Script");
@@ -723,9 +437,10 @@ function App(){
     const cv=canvasRef.current;
     if(!cv) return;
     const seq=++drawSeq.current;
-    renderPattern(cv,cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern);
     const{W,H}=SIZES[sizeKey];
+    cv.width=W; cv.height=H;
     const ctx=cv.getContext("2d");
+    ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
     if(placed){
       try{
         const im=await loadDesign(placed);
@@ -742,7 +457,7 @@ function App(){
     if(seq!==drawSeq.current) return;
     if(phrase.trim())
       renderText(ctx,W,H,phrase,fontFam,fontSize,bold,tColor,shadow,tAlign,tY,spacing);
-  },[cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern,placed,dX,dY,dSize,
+  },[bg,sizeKey,placed,dX,dY,dSize,
      phrase,fontFam,fontSize,bold,tColor,shadow,tAlign,tY,spacing]);
 
   useEffect(()=>{
@@ -761,7 +476,6 @@ function App(){
   },[photoURL,styMode,styStrength,c1,c2,c3]);
 
   const applyPal=i=>{const p=PALETTES[i];setPalIdx(i);setC1(p.c1);setC2(p.c2);setC3(p.c3);};
-  const changeCat=c=>{setCat(c);setPatId(PATS[c][0].id);};
   const chooseArtMode=m=>{setArtMode(m);setAiErr("");setAiOpts([null,null]);};
 
   const onPhoto=async e=>{
@@ -791,27 +505,31 @@ function App(){
   };
 
   const runGenerate=async(image)=>{
-    if(AI_ENDPOINT.indexOf("PASTE")>-1){ setAiErr("The design service is not connected yet."); return; }
     if(!image&&!aiDesc.trim()) return;
     setAiErr("");setAiOpts([null,null]);setAiBusy([true,true]);
     setAiStage(["Sketching the design","Sketching the design"]);
+    let failMsg="";
     const slot=async i=>{
       try{
         const first=await genSVG(image?null:aiDesc,aiStyle,c1,c2,c3,image||null);
-        if(!first){ setAiBusy(b=>{const n=[...b];n[i]=false;return n;}); return null; }
+        if(!first){
+          failMsg=failMsg||"The AI replied but did not include a usable design. Try a clearer description.";
+          setAiBusy(b=>{const n=[...b];n[i]=false;return n;});
+          return null;
+        }
         setAiStage(s=>{const n=[...s];n[i]="Refining the details";return n;});
         const refined=await refineSVG(first,aiStyle,c1,c2,c3);
         setAiOpts(o=>{const n=[...o];n[i]=refined;return n;});
         setAiBusy(b=>{const n=[...b];n[i]=false;return n;});
         return refined;
       }catch(e){
+        failMsg=(e&&e.message)?e.message:"Generation failed.";
         setAiBusy(b=>{const n=[...b];n[i]=false;return n;});
         return null;
       }
     };
     const results=await Promise.all([slot(0),slot(1)]);
-    if(!results[0]&&!results[1])
-      setAiErr("The designs did not come through. Try a clearer description, or check that the worker is deployed with its key.");
+    if(!results[0]&&!results[1]) setAiErr(failMsg||"The designs did not come through.");
   };
   const generateFromPhoto=()=>{
     const img=photoImgRef.current;
@@ -832,9 +550,8 @@ function App(){
   };
   const resetAll=()=>{
     if(!window.confirm("Clear this card and start over?")) return;
-    setNoPattern(false);setCat("floral");setPatId("daisy");
     setPalIdx(0);setC1(PALETTES[0].c1);setC2(PALETTES[0].c2);setC3(PALETTES[0].c3);
-    setDensity(5);setBg("#FFFFFF");setSizeKey("p57");setSeed(42);
+    setBg("#FFFFFF");setSizeKey("p57");
     setPhrase("");setFontFam("Dancing Script");setFS(48);setBold(false);setShadow(true);
     setTColor(INK);setTAlign("center");setTY(.5);setSpacing(0);setShowFP(false);
     setArtMode("describe");setAiStyle("botanical");setAiDesc("");setAiOpts([null,null]);
@@ -851,7 +568,6 @@ function App(){
     +(placed?", with a custom design":"")
     +(phrase.trim()?`, with the phrase "${phrase.trim()}"`:"");
 
-  /* style picker, shared by Describe and Photo-to-art */
   const stylePicker=()=>(
     <div style={{marginBottom:12}}>
       <span style={FLD_LBL}>Art style</span>
@@ -867,7 +583,6 @@ function App(){
     </div>
   );
 
-  /* generation status + the two option previews */
   const aiResults=()=>{
     if(!busy&&!aiOpts[0]&&!aiOpts[1]&&!aiErr) return null;
     return (
@@ -881,7 +596,7 @@ function App(){
         </div>
         {aiErr&&(
           <div role="alert" style={{fontSize:11,color:ACCENT_DK,background:ACCENT_SOFT,
-            border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px",marginBottom:9}}>
+            border:`1px solid ${ACCENT}`,borderRadius:7,padding:"8px 10px",marginBottom:9,lineHeight:1.5}}>
             {aiErr}
           </div>
         )}
@@ -905,8 +620,7 @@ function App(){
                 {aiOpts[i]&&(
                   <button onClick={()=>setPlaced({kind:"svg",data:aiOpts[i]})}
                     style={{width:"100%",marginTop:6,padding:"7px",borderRadius:7,cursor:"pointer",
-                      fontSize:11,fontWeight:600,
-                      border:`1px solid ${ACCENT_DK}`,
+                      fontSize:11,fontWeight:600,border:`1px solid ${ACCENT_DK}`,
                       background:placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?ACCENT_DK:"#fff",
                       color:placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?"#fff":ACCENT_DK}}>
                     {placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?"On your card ✓":"Use this"}
@@ -947,57 +661,8 @@ function App(){
       <div className="controls">
         <div className="sections">
 
-          {/* PATTERN */}
-          <Section title="Background Pattern" first>
-            <button onClick={()=>setNoPattern(v=>!v)} aria-pressed={noPattern}
-              style={{width:"100%",marginBottom:11,padding:"10px 11px",textAlign:"left",
-                      border:`1px solid ${noPattern?INK:LINE}`,borderRadius:8,cursor:"pointer",
-                      background:noPattern?ACCENT_SOFT:CARD,color:INK,fontSize:12,
-                      display:"flex",alignItems:"center",gap:9}}>
-              <span aria-hidden="true" style={{fontSize:15,lineHeight:1}}>{noPattern?"◉":"○"}</span>
-              <span>No background pattern <span style={{color:MUTE}}>(clean card)</span></span>
-            </button>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,opacity:noPattern?.45:1}}>
-              {CATS.map(c=>(
-                <button key={c.id} onClick={()=>changeCat(c.id)} disabled={noPattern}
-                  aria-pressed={cat===c.id}
-                  style={{...seg(cat===c.id),display:"flex",flexDirection:"column",alignItems:"center",
-                          gap:3,padding:"9px 4px",cursor:noPattern?"default":"pointer"}}>
-                  <span aria-hidden="true" style={{fontSize:16}}>{c.icon}</span>
-                  <span>{c.label}</span>
-                </button>
-              ))}
-            </div>
-            {!noPattern&&(
-              <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:9}}>
-                {PATS[cat].map(p=>(
-                  <button key={p.id} onClick={()=>setPatId(p.id)} aria-pressed={patId===p.id}
-                    style={{...seg(patId===p.id),textAlign:"left",padding:"9px 11px"}}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {!noPattern&&(
-              <div style={{marginTop:13}}>
-                <label>
-                  <span style={FLD_LBL}>Density &middot; {density}</span>
-                  <input type="range" min={1} max={10} value={density}
-                    onChange={e=>setDensity(+e.target.value)}/>
-                </label>
-                <div style={RANGE_ENDS}><span>Light</span><span>Dense</span></div>
-                <button onClick={()=>setSeed(Math.floor(Math.random()*99999))}
-                  style={{width:"100%",marginTop:10,padding:"9px",background:CARD,color:INK,
-                          border:`1px solid ${LINE}`,borderRadius:8,cursor:"pointer",
-                          fontSize:12,fontWeight:600}}>
-                  Shuffle Pattern
-                </button>
-              </div>
-            )}
-          </Section>
-
           {/* CARD SIZE */}
-          <Section title="Card Size">
+          <Section title="Card Size" first>
             <label>
               <span style={FLD_LBL}>Greeting card shape</span>
               <select value={sizeKey} onChange={e=>setSizeKey(e.target.value)} style={INP}>
@@ -1010,6 +675,9 @@ function App(){
 
           {/* PALETTE */}
           <Section title="Color Palette">
+            <p style={{margin:"0 0 11px",fontSize:11,color:MUTE,lineHeight:1.5}}>
+              These colors guide the AI artwork and the photo recoloring.
+            </p>
             <div role="group" aria-label="Preset palettes"
                  style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:11}}>
               {PALETTES.map((p,i)=>(
@@ -1175,8 +843,7 @@ function App(){
                             <button onClick={()=>setPlaced({kind:"image",data:styPreview})}
                               style={{width:"100%",marginTop:9,padding:"11px",border:"none",
                                 borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,
-                                background:placed&&placed.kind==="image"&&placed.data===styPreview?ACCENT_DK:ACCENT_DK,
-                                color:"#fff"}}>
+                                background:ACCENT_DK,color:"#fff"}}>
                               {placed&&placed.kind==="image"&&placed.data===styPreview?"On your card ✓":"Use this on my card"}
                             </button>
                           </div>
