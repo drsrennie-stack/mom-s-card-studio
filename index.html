@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Christine's Skivvez Studio</title>
-<meta name="description" content="A studio for planning die-cut greeting card designs: patterns, photo stylization, and text.">
+<meta name="description" content="A studio for designing die-cut greeting cards: patterns, AI artwork, photos, and text.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Great+Vibes&family=Pinyon+Script&family=Pacifico&family=Satisfy&family=Cookie&family=Lobster&family=Playfair+Display:wght@400;700&family=Cinzel+Decorative:wght@400;700&family=Josefin+Sans:wght@400;700&family=Philosopher:wght@400;700&family=Italiana&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -20,9 +20,10 @@
   .studio{max-width:1180px;margin:0 auto;background:#FFFFFF;display:flex;flex-direction:column;
           height:806px;overflow:hidden;}
   .body{flex:1;display:flex;min-height:0;}
-  .controls{width:320px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #E4DED3;}
+  .controls{width:322px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #E4DED3;}
   .sections{flex:1;overflow-y:auto;min-height:0;}
-  .foot{flex-shrink:0;border-top:1px solid #E4DED3;padding:13px 16px;background:#FFFFFF;}
+  .foot{flex-shrink:0;border-top:1px solid #E4DED3;padding:12px 16px;background:#FFFFFF;
+        display:flex;gap:9px;}
   .preview{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
            background:#E9E4DA;padding:26px;gap:13px;}
   button,input,select,textarea{font-family:inherit;}
@@ -30,6 +31,7 @@
   input[type=range]{accent-color:#9E4A2B;width:100%;}
   .sections::-webkit-scrollbar{width:11px;}
   .sections::-webkit-scrollbar-thumb{background:#E4DED3;border-radius:6px;border:3px solid #fff;}
+  .ai-prev svg{width:100%;height:100%;display:block;}
   @media (max-width:879px){
     .studio{height:auto;}
     .body{flex-direction:column;}
@@ -51,8 +53,14 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useCallback } = React;
 
+/* ── design service ───────────────────────────────────────────── */
+/* The Cloudflare Worker that safely holds the Anthropic API key.   */
+const AI_ENDPOINT = "https://skivves-ai.dr-srennie.workers.dev";
+/* If AI ever returns a model error, change this one line.          */
+const AI_MODEL = "claude-sonnet-4-6";
+
 /* ── brand tokens ─────────────────────────────────────────────── */
-const INK="#221F1D", INK2="#3A342F", PAPER="#F4F1EC", CARD="#FFFFFF",
+const INK="#221F1D", PAPER="#F4F1EC", CARD="#FFFFFF",
       LINE="#E4DED3", MUTE="#5C544B", ACCENT="#BC6A4A", ACCENT_DK="#9E4A2B",
       ACCENT_SOFT="#F5EAE3";
 
@@ -128,8 +136,23 @@ const POS_GRID = [
 
 const STY_MODES = [
   { id:"poster", label:"Soft Poster", hint:"Flat printed-color look" },
-  { id:"ink",    label:"Ink Outline", hint:"Clean lines, best for tracing dies" },
+  { id:"ink",    label:"Ink Outline", hint:"Clean lines, good for tracing dies" },
   { id:"duotone",label:"Palette Wash", hint:"Recolored in your card palette" },
+];
+
+const ART_STYLES = [
+  { id:"botanical", label:"Botanical", hint:"Detailed, antique nature print",
+    desc:"a botanical illustration in the tradition of antique natural-history prints: precise confident linework, accurate leaf veining, layered petals with believable overlap, delicate stippling for shading, elegant and restrained" },
+  { id:"nouveau", label:"Art Nouveau", hint:"Flowing, ornamental curves",
+    desc:"an Art Nouveau composition: long sinuous whiplash curves, elegant organic symmetry, ornamental framing lines, flowing stylised forms in the manner of Mucha, decorative but never cluttered" },
+  { id:"folk", label:"Folk Art", hint:"Bold, cheerful, simple shapes",
+    desc:"Scandinavian folk art: bold simplified silhouettes, flat decorative colour fields, charming rhythmic dots and stroke accents, warm and handmade, balanced and symmetrical" },
+  { id:"line", label:"Line Art", hint:"Clean single-line, minimal",
+    desc:"refined single-weight line art: confident continuous contours, generous negative space, no shading, modern and minimal, every line intentional and graceful" },
+  { id:"etching", label:"Etching", hint:"Crosshatched, vintage engraving",
+    desc:"a vintage copperplate etching: dense parallel hatching and crosshatching to model light and shadow, fine tonal gradation built from lines, antique engraving feel" },
+  { id:"block", label:"Block Print", hint:"Bold carved shapes, high contrast",
+    desc:"a hand-carved linocut block print: bold high-contrast shapes, expressive carved negative-space marks, slightly irregular organic edges, strong silhouette, graphic and striking" },
 ];
 
 /* ── helpers ──────────────────────────────────────────────────── */
@@ -159,11 +182,101 @@ function fileToDataURL(file){
     r.readAsDataURL(file);
   });
 }
+function imgToBase64(img,maxDim){
+  let w=img.width,h=img.height;
+  const ar=w/h;
+  if(Math.max(w,h)>maxDim){
+    if(w>=h){ w=maxDim; h=Math.round(maxDim/ar); }
+    else    { h=maxDim; w=Math.round(maxDim*ar); }
+  }
+  const c=document.createElement("canvas");
+  c.width=w; c.height=h;
+  c.getContext("2d").drawImage(img,0,0,w,h);
+  return { media_type:"image/jpeg", data:c.toDataURL("image/jpeg",0.9).split(",")[1] };
+}
 
-/* ── photo stylization (all client-side, no network) ──────────── */
-function stylizePhoto(img, mode, strength, c1, c2, c3){
+/* ── AI design generation (via the Cloudflare worker) ─────────── */
+function extractSVG(raw){
+  const m=(raw||"").match(/<svg[\s\S]*?<\/svg>/i);
+  return m?m[0]:null;
+}
+async function callAI(system,content,maxTokens){
+  const res=await fetch(AI_ENDPOINT,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:AI_MODEL, max_tokens:maxTokens, system:system,
+      messages:[{role:"user",content:content}]
+    })
+  });
+  const data=await res.json();
+  if(data&&Array.isArray(data.content))
+    return data.content.filter(b=>b.type==="text").map(b=>b.text).join("");
+  return "";
+}
+function aiSystem(style,c1,c2,c3){
+  return `You are a master illustrator who draws directly in SVG for a line of handmade greeting cards. Your work is clean, confident and beautiful. It must never look like a clip-art icon or a flat diagram.
+
+OUTPUT (strict):
+- Reply with raw SVG only. Start with <svg and end with </svg>. No prose, no markdown.
+- Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+- Allowed elements only: path, circle, ellipse, rect, polygon, line, polyline, g, defs, linearGradient, radialGradient, clipPath, use.
+- No text, no images, no external references.
+
+COLOUR (strict):
+- Use only ${c1} as dominant, ${c2} as secondary, ${c3} as accent, and #FFFFFF for highlights.
+- Build depth with opacity and with gradients between these colours. Introduce no other hues.
+
+STYLE: ${style.desc}
+
+MAKE IT BEAUTIFUL:
+- One clear focal subject, confident asymmetric composition. Fill the 400x400 frame with intention and keep elegant breathing room.
+- Three depth layers: a soft simple background, the detailed subject in the mid-ground, small crisp foreground accents.
+- Real detail in the focal area: texture strokes, fine inner linework, small marks the eye can explore.
+- Organic bezier curves, not stiff circles or straight lines where a curve belongs. Vary line weight for life.
+- Put gradients on at least three major shapes for dimension.
+- The result must look hand-crafted by a skilled artist. Crude, flat or icon-like results are failures.`;
+}
+async function genSVG(description,styleId,c1,c2,c3,image){
+  const style=ART_STYLES.find(s=>s.id===styleId)||ART_STYLES[0];
+  const sys=aiSystem(style,c1,c2,c3);
+  let content;
+  if(image){
+    content=[
+      {type:"image",source:{type:"base64",media_type:image.media_type,data:image.data}},
+      {type:"text",text:`Study the reference photo above. Capture its essential subject, character and arrangement, then reimagine it as ${style.label} artwork following every rule. Interpret it, do not trace it. This is the hero illustration for a handmade greeting card. Make it genuinely beautiful.`}
+    ];
+  }else{
+    content=[{type:"text",text:`Create the hero illustration for a handmade greeting card.\nSubject: "${description}"\nStyle: ${style.label}.\nMake it genuinely beautiful, detailed and elegant. Use ${c1} dominant, ${c2} secondary, ${c3} accent.`}];
+  }
+  try{
+    const raw=await callAI(sys,content,8000);
+    return extractSVG(raw);
+  }catch(e){ return null; }
+}
+async function refineSVG(svg,styleId,c1,c2,c3){
+  const style=ART_STYLES.find(s=>s.id===styleId)||ART_STYLES[0];
+  const sys=`You are an exacting art director improving an SVG illustration for a handmade greeting card. You receive one SVG and return a clearly better one.
+
+Judge it honestly, then fix every weakness:
+- Does it look hand-crafted and beautiful, or flat and crude like clip-art? Push it firmly toward beautiful.
+- Strengthen the focal point and the overall composition. Improve the asymmetric balance.
+- Add depth through layering, overlap and gradients on major shapes.
+- Add fine detail and texture in the focal area. Smooth any clumsy curves.
+- Keep the ${style.label} character: ${style.desc}
+- Colours: only ${c1}, ${c2}, ${c3}, #FFFFFF and their opacities; gradients between them are welcome.
+
+OUTPUT: raw SVG only, start with <svg and end with </svg>, viewBox="0 0 400 400" width="400" height="400". Allowed elements only: path, circle, ellipse, rect, polygon, line, polyline, g, defs, linearGradient, radialGradient, clipPath, use. No text or external references.`;
+  try{
+    const raw=await callAI(sys,[{type:"text",text:`Refine this illustration to a higher standard:\n\n${svg}`}],8000);
+    return extractSVG(raw)||svg;
+  }catch(e){ return svg; }
+}
+
+/* ── photo stylization (client-side, no network) ──────────────── */
+function stylizePhoto(img,mode,strength,c1,c2,c3){
   const maxDim=700;
-  let w=img.width, h=img.height;
+  let w=img.width,h=img.height;
   const ar=w/h;
   if(Math.max(w,h)>maxDim){
     if(w>=h){ w=maxDim; h=Math.round(maxDim/ar); }
@@ -175,7 +288,6 @@ function stylizePhoto(img, mode, strength, c1, c2, c3){
   ctx.drawImage(img,0,0,w,h);
   const id=ctx.getImageData(0,0,w,h);
   const d=id.data;
-
   if(mode==="poster"){
     const levels=Math.max(2,Math.round(2+strength*5));
     const step=255/(levels-1);
@@ -185,7 +297,7 @@ function stylizePhoto(img, mode, strength, c1, c2, c3){
       d[i+2]=Math.round(Math.round(d[i+2]/step)*step);
     }
     ctx.putImageData(id,0,0);
-  } else if(mode==="ink"){
+  }else if(mode==="ink"){
     const g=new Float32Array(w*h);
     for(let i=0,p=0;i<d.length;i+=4,p++)
       g[p]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
@@ -209,7 +321,7 @@ function stylizePhoto(img, mode, strength, c1, c2, c3){
       }
     }
     ctx.putImageData(out,0,0);
-  } else {
+  }else{
     const ramp=[hexToRgb(c1),hexToRgb(c2),hexToRgb(c3),[255,255,255]]
                  .sort((a,b)=>lumOf(a)-lumOf(b));
     const contrast=0.65+strength*1.7;
@@ -507,14 +619,24 @@ function renderPattern(canvas,cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPatte
   if(fn) fn();
 }
 
+async function loadDesign(placed){
+  let url,revoke=false;
+  if(placed.kind==="svg"){
+    url=URL.createObjectURL(new Blob([placed.data],{type:"image/svg+xml"}));
+    revoke=true;
+  } else url=placed.data;
+  try{ return await loadImg(url); }
+  finally{ if(revoke) URL.revokeObjectURL(url); }
+}
+
 /* ── shared styles ────────────────────────────────────────────── */
 const SECT_LBL={margin:"0 0 13px",fontSize:11,letterSpacing:".16em",textTransform:"uppercase",color:INK,fontWeight:600};
 const FLD_LBL ={display:"block",fontSize:10.5,letterSpacing:".05em",textTransform:"uppercase",color:MUTE,fontWeight:600,marginBottom:7};
 const INP={width:"100%",padding:"9px 11px",border:`1px solid ${LINE}`,borderRadius:8,fontSize:13,color:INK,background:CARD};
 const seg=a=>({border:`1px solid ${a?INK:LINE}`,background:a?INK:CARD,color:a?"#fff":INK,borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:a?600:500,padding:"9px 8px",transition:"background .15s,color .15s,border-color .15s"});
 const RANGE_ENDS={display:"flex",justifyContent:"space-between",fontSize:10,color:MUTE,marginTop:3};
+const HIDDEN_FILE={position:"absolute",width:1,height:1,padding:0,margin:-1,overflow:"hidden",clip:"rect(0 0 0 0)",border:0};
 
-/* ── small components ─────────────────────────────────────────── */
 function Section({title,first,children}){
   return (
     <section style={{padding:"17px 16px",borderTop:first?"none":`1px solid ${LINE}`}}>
@@ -564,12 +686,22 @@ function App(){
   const[spacing,setSpacing]=useState(0);
   const[showFP,setShowFP] =useState(false);
   const[fontsReady,setFontsReady]=useState(false);
-  /* photo */
+  /* artwork */
+  const[artMode,setArtMode]=useState("describe");
+  const[aiStyle,setAiStyle]=useState("botanical");
+  const[aiDesc,setAiDesc]  =useState("");
+  const[aiOpts,setAiOpts]  =useState([null,null]);
+  const[aiBusy,setAiBusy]  =useState([false,false]);
+  const[aiStage,setAiStage]=useState(["",""]);
+  const[aiErr,setAiErr]    =useState("");
   const[photoURL,setPhotoURL]=useState(null);
   const[photoErr,setPhotoErr]=useState("");
+  const[photoAction,setPhotoAction]=useState("ai");
   const[styMode,setStyMode]  =useState("poster");
   const[styStrength,setStyStrength]=useState(.5);
   const[styPreview,setStyPreview] =useState(null);
+  const[ownURL,setOwnURL]  =useState(null);
+  const[ownErr,setOwnErr]  =useState("");
   /* placed design */
   const[placed,setPlaced] =useState(null);
   const[dX,setDX]         =useState(.5);
@@ -578,16 +710,15 @@ function App(){
 
   const canvasRef=useRef(null);
   const photoImgRef=useRef(null);
-  const fileRef=useRef(null);
+  const photoFileRef=useRef(null);
+  const ownFileRef=useRef(null);
   const drawSeq=useRef(0);
 
   useEffect(()=>{
-    if(document.fonts&&document.fonts.ready){
-      document.fonts.ready.then(()=>setFontsReady(true));
-    } else { setFontsReady(true); }
+    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>setFontsReady(true));
+    else setFontsReady(true);
   },[]);
 
-  /* full canvas redraw: background, pattern, placed photo, text */
   const redraw=useCallback(async()=>{
     const cv=canvasRef.current;
     if(!cv) return;
@@ -597,12 +728,14 @@ function App(){
     const ctx=cv.getContext("2d");
     if(placed){
       try{
-        const im=await loadImg(placed);
+        const im=await loadDesign(placed);
         if(seq!==drawSeq.current) return;
-        const ar=im.width/im.height;
         const s=dSize*Math.min(W,H);
         let dw=s,dh=s;
-        if(ar>=1){ dw=s; dh=s/ar; } else { dh=s; dw=s*ar; }
+        if(placed.kind==="image"){
+          const ar=im.width/im.height;
+          if(ar>=1){ dw=s; dh=s/ar; } else { dh=s; dw=s*ar; }
+        }
         ctx.drawImage(im,dX*W-dw/2,dY*H-dh/2,dw,dh);
       }catch(e){}
     }
@@ -621,7 +754,6 @@ function App(){
     return ()=>{ cancelled=true; };
   },[redraw,fontsReady]);
 
-  /* recompute stylized photo preview */
   useEffect(()=>{
     if(!photoImgRef.current){ setStyPreview(null); return; }
     try{ setStyPreview(stylizePhoto(photoImgRef.current,styMode,styStrength,c1,c2,c3)); }
@@ -630,6 +762,7 @@ function App(){
 
   const applyPal=i=>{const p=PALETTES[i];setPalIdx(i);setC1(p.c1);setC2(p.c2);setC3(p.c3);};
   const changeCat=c=>{setCat(c);setPatId(PATS[c][0].id);};
+  const chooseArtMode=m=>{setArtMode(m);setAiErr("");setAiOpts([null,null]);};
 
   const onPhoto=async e=>{
     const f=e.target.files&&e.target.files[0];
@@ -641,9 +774,52 @@ function App(){
       const im=await loadImg(url);
       photoImgRef.current=im;
       setPhotoURL(url);
-    }catch(err){
-      setPhotoErr("That file would not open. Please try a JPG or PNG photo.");
-    }
+      setAiOpts([null,null]);setAiErr("");
+    }catch(err){ setPhotoErr("That file would not open. Please try a JPG or PNG photo."); }
+  };
+  const onOwn=async e=>{
+    const f=e.target.files&&e.target.files[0];
+    e.target.value="";
+    if(!f) return;
+    setOwnErr("");
+    try{
+      const url=await fileToDataURL(f);
+      await loadImg(url);
+      setOwnURL(url);
+      setPlaced({kind:"image",data:url});
+    }catch(err){ setOwnErr("That file would not open. A PNG (ideally with a clear background) works best."); }
+  };
+
+  const runGenerate=async(image)=>{
+    if(AI_ENDPOINT.indexOf("PASTE")>-1){ setAiErr("The design service is not connected yet."); return; }
+    if(!image&&!aiDesc.trim()) return;
+    setAiErr("");setAiOpts([null,null]);setAiBusy([true,true]);
+    setAiStage(["Sketching the design","Sketching the design"]);
+    const slot=async i=>{
+      try{
+        const first=await genSVG(image?null:aiDesc,aiStyle,c1,c2,c3,image||null);
+        if(!first){ setAiBusy(b=>{const n=[...b];n[i]=false;return n;}); return null; }
+        setAiStage(s=>{const n=[...s];n[i]="Refining the details";return n;});
+        const refined=await refineSVG(first,aiStyle,c1,c2,c3);
+        setAiOpts(o=>{const n=[...o];n[i]=refined;return n;});
+        setAiBusy(b=>{const n=[...b];n[i]=false;return n;});
+        return refined;
+      }catch(e){
+        setAiBusy(b=>{const n=[...b];n[i]=false;return n;});
+        return null;
+      }
+    };
+    const results=await Promise.all([slot(0),slot(1)]);
+    if(!results[0]&&!results[1])
+      setAiErr("The designs did not come through. Try a clearer description, or check that the worker is deployed with its key.");
+  };
+  const generateFromPhoto=()=>{
+    const img=photoImgRef.current;
+    if(!img) return;
+    let image;
+    try{ image=imgToBase64(img,1100); }
+    catch(e){ setAiErr("Could not read that photo."); return; }
+    runGenerate(image);
   };
 
   const download=()=>{
@@ -654,15 +830,99 @@ function App(){
     a.href=cv.toDataURL("image/png");
     a.click();
   };
+  const resetAll=()=>{
+    if(!window.confirm("Clear this card and start over?")) return;
+    setNoPattern(false);setCat("floral");setPatId("daisy");
+    setPalIdx(0);setC1(PALETTES[0].c1);setC2(PALETTES[0].c2);setC3(PALETTES[0].c3);
+    setDensity(5);setBg("#FFFFFF");setSizeKey("p57");setSeed(42);
+    setPhrase("");setFontFam("Dancing Script");setFS(48);setBold(false);setShadow(true);
+    setTColor(INK);setTAlign("center");setTY(.5);setSpacing(0);setShowFP(false);
+    setArtMode("describe");setAiStyle("botanical");setAiDesc("");setAiOpts([null,null]);
+    setAiBusy([false,false]);setAiStage(["",""]);setAiErr("");
+    setPhotoURL(null);setPhotoErr("");setPhotoAction("ai");
+    setStyMode("poster");setStyStrength(.5);setStyPreview(null);
+    setOwnURL(null);setOwnErr("");
+    setPlaced(null);setDX(.5);setDY(.5);setDSize(.5);
+    photoImgRef.current=null;
+  };
 
+  const busy=aiBusy[0]||aiBusy[1];
   const canvasLabel=`${SIZES[sizeKey].label.trim()} greeting card preview`
-    +(placed?", with a photo design":"")
+    +(placed?", with a custom design":"")
     +(phrase.trim()?`, with the phrase "${phrase.trim()}"`:"");
+
+  /* style picker, shared by Describe and Photo-to-art */
+  const stylePicker=()=>(
+    <div style={{marginBottom:12}}>
+      <span style={FLD_LBL}>Art style</span>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+        {ART_STYLES.map(s=>(
+          <button key={s.id} onClick={()=>setAiStyle(s.id)} aria-pressed={aiStyle===s.id}
+            style={{...seg(aiStyle===s.id),padding:"8px 6px"}}>{s.label}</button>
+        ))}
+      </div>
+      <div style={{fontSize:11,color:MUTE,marginTop:6,fontStyle:"italic"}}>
+        {(ART_STYLES.find(s=>s.id===aiStyle)||ART_STYLES[0]).hint}
+      </div>
+    </div>
+  );
+
+  /* generation status + the two option previews */
+  const aiResults=()=>{
+    if(!busy&&!aiOpts[0]&&!aiOpts[1]&&!aiErr) return null;
+    return (
+      <div style={{marginTop:12}}>
+        <div aria-live="polite" style={{minHeight:1}}>
+          {busy&&(
+            <div style={{fontSize:11.5,color:MUTE,marginBottom:9}}>
+              Creating your designs. This can take up to a minute.
+            </div>
+          )}
+        </div>
+        {aiErr&&(
+          <div role="alert" style={{fontSize:11,color:ACCENT_DK,background:ACCENT_SOFT,
+            border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px",marginBottom:9}}>
+            {aiErr}
+          </div>
+        )}
+        {(busy||aiOpts[0]||aiOpts[1])&&(
+          <div style={{display:"flex",gap:8}}>
+            {[0,1].map(i=>(
+              <div key={i} style={{flex:1}}>
+                <div style={{border:`1px solid ${placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?INK:LINE}`,
+                  borderRadius:8,overflow:"hidden",background:"#fff",aspectRatio:"1",
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {aiBusy[i]?(
+                    <span style={{fontSize:10.5,color:MUTE,textAlign:"center",padding:6}}>{aiStage[i]}</span>
+                  ):aiOpts[i]?(
+                    <div className="ai-prev" role="img" aria-label={`Design option ${i+1}`}
+                      style={{width:"100%",height:"100%"}}
+                      dangerouslySetInnerHTML={{__html:aiOpts[i]}}/>
+                  ):(
+                    <span style={{fontSize:10.5,color:MUTE,padding:6}}>No result</span>
+                  )}
+                </div>
+                {aiOpts[i]&&(
+                  <button onClick={()=>setPlaced({kind:"svg",data:aiOpts[i]})}
+                    style={{width:"100%",marginTop:6,padding:"7px",borderRadius:7,cursor:"pointer",
+                      fontSize:11,fontWeight:600,
+                      border:`1px solid ${ACCENT_DK}`,
+                      background:placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?ACCENT_DK:"#fff",
+                      color:placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?"#fff":ACCENT_DK}}>
+                    {placed&&placed.kind==="svg"&&placed.data===aiOpts[i]?"On your card ✓":"Use this"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
   <div className="studio">
 
-    {/* header */}
     <header style={{display:"flex",alignItems:"center",gap:13,padding:"14px 22px",
                     borderBottom:`1px solid ${LINE}`,flexShrink:0,background:CARD}}>
       <span style={{width:34,height:34,borderRadius:9,background:ACCENT,
@@ -797,86 +1057,177 @@ function App(){
             </div>
           </Section>
 
-          {/* PHOTO */}
-          <Section title="Add a Photo">
+          {/* ARTWORK */}
+          <Section title="Artwork">
             <p style={{margin:"0 0 11px",fontSize:11.5,color:MUTE,lineHeight:1.5}}>
-              Upload a photo of a flower (or anything else) and turn it into a clean
-              design for your card.
+              Add a flower or illustration to your card.
             </p>
-            <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto}
-              aria-label="Upload a photo"
-              style={{position:"absolute",width:1,height:1,padding:0,margin:-1,
-                      overflow:"hidden",clip:"rect(0 0 0 0)",border:0}}/>
-            <button onClick={()=>fileRef.current&&fileRef.current.click()}
-              style={{width:"100%",padding:"11px",background:CARD,color:INK,
-                      border:`1.5px dashed ${ACCENT}`,borderRadius:8,cursor:"pointer",
-                      fontSize:12.5,fontWeight:600}}>
-              {photoURL?"Choose a different photo":"Choose a photo…"}
-            </button>
-            {photoErr&&(
-              <div role="alert" style={{marginTop:8,fontSize:11,color:ACCENT_DK,
-                background:ACCENT_SOFT,border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px"}}>
-                {photoErr}
+            <div role="group" aria-label="Artwork source"
+                 style={{display:"flex",gap:5,marginBottom:13}}>
+              {[["describe","Describe it"],["photo","From a photo"],["own","My own art"]].map(([m,lbl])=>(
+                <button key={m} onClick={()=>chooseArtMode(m)} aria-pressed={artMode===m}
+                  style={{...seg(artMode===m),flex:1,padding:"8px 4px",fontSize:11}}>{lbl}</button>
+              ))}
+            </div>
+
+            {/* describe */}
+            {artMode==="describe"&&(
+              <div>
+                {stylePicker()}
+                <label>
+                  <span style={FLD_LBL}>Describe your design</span>
+                  <textarea value={aiDesc} onChange={e=>setAiDesc(e.target.value)} rows={3}
+                    placeholder="a hummingbird and a hibiscus, a golden retriever with a bow, a lighthouse on a rocky coast…"
+                    style={{...INP,resize:"none"}}/>
+                </label>
+                <button onClick={()=>runGenerate(null)} disabled={busy||!aiDesc.trim()}
+                  style={{width:"100%",marginTop:10,padding:"11px",borderRadius:8,
+                    border:"none",fontSize:12.5,fontWeight:600,
+                    cursor:busy||!aiDesc.trim()?"default":"pointer",
+                    background:ACCENT_DK,color:"#fff",
+                    opacity:(!busy&&!aiDesc.trim())?.5:1}}>
+                  {busy?"Creating…":"Create 2 designs"}
+                </button>
+                {aiResults()}
               </div>
             )}
 
-            {photoURL&&(
-              <div style={{marginTop:13}}>
-                <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:13}}>
-                  <img src={photoURL} alt="The photo you uploaded"
-                    style={{width:62,height:62,objectFit:"cover",borderRadius:8,
-                            border:`1px solid ${LINE}`,flexShrink:0}}/>
-                  <p style={{margin:0,fontSize:11,color:MUTE,lineHeight:1.5}}>
-                    Pick a style below. The preview updates as you adjust it.
-                  </p>
-                </div>
-
-                <span style={FLD_LBL}>Style</span>
-                <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:11}}>
-                  {STY_MODES.map(m=>(
-                    <button key={m.id} onClick={()=>setStyMode(m.id)} aria-pressed={styMode===m.id}
-                      style={{...seg(styMode===m.id),textAlign:"left",padding:"8px 11px"}}>
-                      <span style={{display:"block"}}>{m.label}</span>
-                      <span style={{display:"block",fontSize:10,fontWeight:400,marginTop:2,
-                                    color:styMode===m.id?"rgba(255,255,255,.78)":MUTE}}>
-                        {m.hint}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
-                <label>
-                  <span style={FLD_LBL}>
-                    {styMode==="ink"?"Line detail":"Strength"} &middot; {Math.round(styStrength*100)}%
-                  </span>
-                  <input type="range" min={0} max={100} value={Math.round(styStrength*100)}
-                    onChange={e=>setStyStrength(+e.target.value/100)}/>
-                </label>
-
-                {styPreview&&(
+            {/* photo */}
+            {artMode==="photo"&&(
+              <div>
+                <input ref={photoFileRef} type="file" accept="image/*" onChange={onPhoto}
+                  aria-label="Upload a photo" style={HIDDEN_FILE}/>
+                <button onClick={()=>photoFileRef.current&&photoFileRef.current.click()}
+                  style={{width:"100%",padding:"11px",background:CARD,color:INK,
+                          border:`1.5px dashed ${ACCENT}`,borderRadius:8,cursor:"pointer",
+                          fontSize:12.5,fontWeight:600}}>
+                  {photoURL?"Choose a different photo":"Choose a photo…"}
+                </button>
+                {photoErr&&(
+                  <div role="alert" style={{marginTop:8,fontSize:11,color:ACCENT_DK,
+                    background:ACCENT_SOFT,border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px"}}>
+                    {photoErr}
+                  </div>
+                )}
+                {photoURL&&(
                   <div style={{marginTop:12}}>
-                    <span style={FLD_LBL}>Preview</span>
-                    <div style={{border:`1px solid ${LINE}`,borderRadius:8,overflow:"hidden",
-                                 background:"#fff",display:"flex",justifyContent:"center"}}>
-                      <img src={styPreview} alt="Stylized version of your photo"
-                        style={{maxWidth:"100%",maxHeight:150,display:"block"}}/>
+                    <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}>
+                      <img src={photoURL} alt="The photo you uploaded"
+                        style={{width:54,height:54,objectFit:"cover",borderRadius:8,
+                                border:`1px solid ${LINE}`,flexShrink:0}}/>
+                      <span style={{fontSize:11,color:MUTE,lineHeight:1.5}}>
+                        Choose how to turn it into card artwork.
+                      </span>
                     </div>
-                    <button onClick={()=>{setPlaced(styPreview);}}
-                      style={{width:"100%",marginTop:9,padding:"11px",background:ACCENT_DK,
-                              color:"#fff",border:"none",borderRadius:8,cursor:"pointer",
-                              fontSize:12.5,fontWeight:600}}>
-                      {placed===styPreview?"Added to card ✓":"Use this on my card"}
-                    </button>
+                    <div role="group" aria-label="Photo treatment"
+                         style={{display:"flex",gap:5,marginBottom:12}}>
+                      {[["ai","Draw as art"],["stylize","Quick stylize"]].map(([m,lbl])=>(
+                        <button key={m} onClick={()=>{setPhotoAction(m);setAiOpts([null,null]);setAiErr("");}}
+                          aria-pressed={photoAction===m}
+                          style={{...seg(photoAction===m),flex:1}}>{lbl}</button>
+                      ))}
+                    </div>
+
+                    {photoAction==="ai"&&(
+                      <div>
+                        <p style={{margin:"0 0 11px",fontSize:11,color:MUTE,lineHeight:1.5}}>
+                          The AI studies your photo and draws a fresh, clean illustration from it.
+                        </p>
+                        {stylePicker()}
+                        <button onClick={generateFromPhoto} disabled={busy}
+                          style={{width:"100%",padding:"11px",borderRadius:8,border:"none",
+                            fontSize:12.5,fontWeight:600,cursor:busy?"default":"pointer",
+                            background:ACCENT_DK,color:"#fff"}}>
+                          {busy?"Creating…":"Create 2 designs from photo"}
+                        </button>
+                        {aiResults()}
+                      </div>
+                    )}
+
+                    {photoAction==="stylize"&&(
+                      <div>
+                        <span style={FLD_LBL}>Style</span>
+                        <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:11}}>
+                          {STY_MODES.map(m=>(
+                            <button key={m.id} onClick={()=>setStyMode(m.id)} aria-pressed={styMode===m.id}
+                              style={{...seg(styMode===m.id),textAlign:"left",padding:"8px 11px"}}>
+                              <span style={{display:"block"}}>{m.label}</span>
+                              <span style={{display:"block",fontSize:10,fontWeight:400,marginTop:2,
+                                color:styMode===m.id?"rgba(255,255,255,.78)":MUTE}}>{m.hint}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <label>
+                          <span style={FLD_LBL}>
+                            {styMode==="ink"?"Line detail":"Strength"} &middot; {Math.round(styStrength*100)}%
+                          </span>
+                          <input type="range" min={0} max={100} value={Math.round(styStrength*100)}
+                            onChange={e=>setStyStrength(+e.target.value/100)}/>
+                        </label>
+                        {styPreview&&(
+                          <div style={{marginTop:12}}>
+                            <span style={FLD_LBL}>Preview</span>
+                            <div style={{border:`1px solid ${LINE}`,borderRadius:8,overflow:"hidden",
+                                         background:"#fff",display:"flex",justifyContent:"center"}}>
+                              <img src={styPreview} alt="Stylized version of your photo"
+                                style={{maxWidth:"100%",maxHeight:150,display:"block"}}/>
+                            </div>
+                            <button onClick={()=>setPlaced({kind:"image",data:styPreview})}
+                              style={{width:"100%",marginTop:9,padding:"11px",border:"none",
+                                borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,
+                                background:placed&&placed.kind==="image"&&placed.data===styPreview?ACCENT_DK:ACCENT_DK,
+                                color:"#fff"}}>
+                              {placed&&placed.kind==="image"&&placed.data===styPreview?"On your card ✓":"Use this on my card"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
+            {/* own */}
+            {artMode==="own"&&(
+              <div>
+                <p style={{margin:"0 0 11px",fontSize:11,color:MUTE,lineHeight:1.5}}>
+                  Upload clip art or an illustration you already like. It is placed on the card
+                  as-is, with no filter. A PNG with a clear background works best.
+                </p>
+                <input ref={ownFileRef} type="file" accept="image/*" onChange={onOwn}
+                  aria-label="Upload your own artwork" style={HIDDEN_FILE}/>
+                <button onClick={()=>ownFileRef.current&&ownFileRef.current.click()}
+                  style={{width:"100%",padding:"11px",background:CARD,color:INK,
+                          border:`1.5px dashed ${ACCENT}`,borderRadius:8,cursor:"pointer",
+                          fontSize:12.5,fontWeight:600}}>
+                  {ownURL?"Choose different artwork":"Choose artwork…"}
+                </button>
+                {ownErr&&(
+                  <div role="alert" style={{marginTop:8,fontSize:11,color:ACCENT_DK,
+                    background:ACCENT_SOFT,border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px"}}>
+                    {ownErr}
+                  </div>
+                )}
+                {ownURL&&(
+                  <div style={{display:"flex",gap:10,alignItems:"center",marginTop:12}}>
+                    <img src={ownURL} alt="Your uploaded artwork"
+                      style={{width:54,height:54,objectFit:"contain",borderRadius:8,
+                              border:`1px solid ${LINE}`,background:"#fff",flexShrink:0}}/>
+                    <span style={{fontSize:11,color:MUTE,lineHeight:1.5}}>
+                      It is on your card. Position it below.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* placement */}
             {placed&&(
               <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${LINE}`}}>
                 <span style={FLD_LBL}>Place on card</span>
                 <div style={{display:"flex",gap:13,alignItems:"flex-start"}}>
-                  <div role="group" aria-label="Photo position"
+                  <div role="group" aria-label="Artwork position"
                        style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,flexShrink:0}}>
                     {POS_GRID.flat().map((pos,i)=>{
                       const on=Math.abs(dX-pos.x)<.05&&Math.abs(dY-pos.y)<.05;
@@ -884,8 +1235,7 @@ function App(){
                         <button key={i} aria-label={pos.label} aria-pressed={on}
                           onClick={()=>{setDX(pos.x);setDY(pos.y);}}
                           style={{width:24,height:24,borderRadius:6,cursor:"pointer",
-                                  border:`1.5px solid ${on?INK:LINE}`,
-                                  background:on?INK:CARD}}/>
+                                  border:`1.5px solid ${on?INK:LINE}`,background:on?INK:CARD}}/>
                       );
                     })}
                   </div>
@@ -900,7 +1250,7 @@ function App(){
                   style={{width:"100%",marginTop:10,padding:"8px",background:"transparent",
                           color:MUTE,border:`1px solid ${LINE}`,borderRadius:8,cursor:"pointer",
                           fontSize:11}}>
-                  Remove photo from card
+                  Remove artwork from card
                 </button>
               </div>
             )}
@@ -1011,11 +1361,17 @@ function App(){
         </div>{/* /.sections */}
 
         <div className="foot">
+          <button onClick={resetAll}
+            style={{flex:"0 0 38%",padding:"13px 8px",background:CARD,color:INK,
+                    border:`1px solid ${LINE}`,borderRadius:9,cursor:"pointer",
+                    fontSize:12.5,fontWeight:600}}>
+            Reset
+          </button>
           <button onClick={download}
-            style={{width:"100%",padding:"13px",background:INK,color:"#fff",border:"none",
-                    borderRadius:9,cursor:"pointer",fontSize:13.5,fontWeight:600,
+            style={{flex:1,padding:"13px",background:INK,color:"#fff",border:"none",
+                    borderRadius:9,cursor:"pointer",fontSize:13,fontWeight:600,
                     letterSpacing:".02em"}}>
-            Download Card as PNG
+            Download PNG
           </button>
         </div>
       </div>{/* /.controls */}
