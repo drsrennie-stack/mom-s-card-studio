@@ -1,0 +1,1067 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Christine's Skivvez Studio</title>
+<meta name="description" content="A studio for planning die-cut greeting card designs: patterns, photo stylization, and text.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Great+Vibes&family=Pinyon+Script&family=Pacifico&family=Satisfy&family=Cookie&family=Lobster&family=Playfair+Display:wght@400;700&family=Cinzel+Decorative:wght@400;700&family=Josefin+Sans:wght@400;700&family=Philosopher:wght@400;700&family=Italiana&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:#F4F1EC;color:#221F1D;-webkit-font-smoothing:antialiased;
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .boot{padding:64px 24px;text-align:center;color:#5C544B;font-size:14px;letter-spacing:.02em;}
+  .skip-link{position:absolute;left:-9999px;top:0;z-index:60;background:#221F1D;color:#fff;
+             padding:10px 16px;border-radius:0 0 8px 0;text-decoration:none;font-size:13px;}
+  .skip-link:focus{left:0;}
+  .studio{max-width:1180px;margin:0 auto;background:#FFFFFF;display:flex;flex-direction:column;
+          height:806px;overflow:hidden;}
+  .body{flex:1;display:flex;min-height:0;}
+  .controls{width:320px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #E4DED3;}
+  .sections{flex:1;overflow-y:auto;min-height:0;}
+  .foot{flex-shrink:0;border-top:1px solid #E4DED3;padding:13px 16px;background:#FFFFFF;}
+  .preview{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+           background:#E9E4DA;padding:26px;gap:13px;}
+  button,input,select,textarea{font-family:inherit;}
+  *:focus-visible{outline:2px solid #BC6A4A;outline-offset:2px;border-radius:2px;}
+  input[type=range]{accent-color:#9E4A2B;width:100%;}
+  .sections::-webkit-scrollbar{width:11px;}
+  .sections::-webkit-scrollbar-thumb{background:#E4DED3;border-radius:6px;border:3px solid #fff;}
+  @media (max-width:879px){
+    .studio{height:auto;}
+    .body{flex-direction:column;}
+    .controls{width:100%;border-right:none;}
+    .sections{overflow-y:visible;}
+    .preview{order:-1;padding:18px;}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#preview">Skip to card preview</a>
+<div id="root"><div class="boot">Loading the studio&hellip;</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js" crossorigin></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── brand tokens ─────────────────────────────────────────────── */
+const INK="#221F1D", INK2="#3A342F", PAPER="#F4F1EC", CARD="#FFFFFF",
+      LINE="#E4DED3", MUTE="#5C544B", ACCENT="#BC6A4A", ACCENT_DK="#9E4A2B",
+      ACCENT_SOFT="#F5EAE3";
+
+/* ── constants ────────────────────────────────────────────────── */
+const PALETTES = [
+  { name:"Garden Rose",   c1:"#C04A6A", c2:"#F4B8C8", c3:"#4A7C59" },
+  { name:"Ocean Mist",    c1:"#1E5F74", c2:"#5B9AA0", c3:"#D4A24C" },
+  { name:"Autumn Spice",  c1:"#C25A3E", c2:"#D4A24C", c3:"#7A4B2E" },
+  { name:"Winter Berry",  c1:"#6B2D8B", c2:"#C0392B", c3:"#1A3A4A" },
+  { name:"Spring Meadow", c1:"#4A7C59", c2:"#F4E285", c3:"#E8A0BF" },
+  { name:"Midnight Navy", c1:"#0A1322", c2:"#D4A24C", c3:"#C25A3E" },
+  { name:"Classic Black", c1:"#111111", c2:"#555555", c3:"#999999" },
+  { name:"Silver Gray",   c1:"#2E2E2E", c2:"#7A7A7A", c3:"#C4C4C4" },
+  { name:"Warm Charcoal", c1:"#3A3530", c2:"#8A8178", c3:"#D0CBC4" },
+  { name:"Black + Gold",  c1:"#111111", c2:"#C9A84C", c3:"#666666" },
+  { name:"Black + White", c1:"#111111", c2:"#ffffff", c3:"#888888" },
+  { name:"Soft Dove",     c1:"#D0D0D0", c2:"#F5F5F5", c3:"#888888" },
+];
+
+const FONTS = [
+  { name:"Dancing Script",    family:"Dancing Script" },
+  { name:"Great Vibes",       family:"Great Vibes" },
+  { name:"Pinyon Script",     family:"Pinyon Script" },
+  { name:"Pacifico",          family:"Pacifico" },
+  { name:"Satisfy",           family:"Satisfy" },
+  { name:"Cookie",            family:"Cookie" },
+  { name:"Lobster",           family:"Lobster" },
+  { name:"Playfair Display",  family:"Playfair Display" },
+  { name:"Cinzel Decorative", family:"Cinzel Decorative" },
+  { name:"Josefin Sans",      family:"Josefin Sans" },
+  { name:"Philosopher",       family:"Philosopher" },
+  { name:"Italiana",          family:"Italiana" },
+];
+
+const CATS = [
+  { id:"floral",    label:"Floral",    icon:"❀" },
+  { id:"geometric", label:"Geometric", icon:"◈" },
+  { id:"holiday",   label:"Holiday",   icon:"✦" },
+  { id:"frame",     label:"Frames",    icon:"▢" },
+];
+
+const PATS = {
+  floral:    [{id:"daisy",    label:"Daisy Field"},
+              {id:"roses",    label:"Rose Cluster"},
+              {id:"vines",    label:"Vines and Leaves"},
+              {id:"magnolia", label:"Magnolia Blooms"}],
+  geometric: [{id:"honeycomb",label:"Honeycomb"},
+              {id:"mandala",  label:"Mandala"},
+              {id:"diagonal", label:"Diagonal Stripes"},
+              {id:"argyle",   label:"Argyle Diamonds"}],
+  holiday:   [{id:"snowflake",label:"Snowflake"},
+              {id:"hearts",   label:"Hearts"},
+              {id:"stars",    label:"Starburst"},
+              {id:"tree",     label:"Pine Tree"}],
+  frame:     [{id:"nested",   label:"Nested Frame"},
+              {id:"scallop",  label:"Scalloped Edge"},
+              {id:"flourish", label:"Corner Flourish"},
+              {id:"ribbon",   label:"Ribbon Border"}],
+};
+
+const SIZES = {
+  p57:{ label:"5 x 7  Portrait",  W:350, H:490 },
+  sq: { label:"5 x 5  Square",    W:420, H:420 },
+  a2: { label:"A2  Standard",     W:340, H:425 },
+  ls: { label:"7 x 5  Landscape", W:490, H:350 },
+};
+
+const POS_GRID = [
+  [{x:.2,y:.15,label:"Top Left"},   {x:.5,y:.15,label:"Top Center"},   {x:.8,y:.15,label:"Top Right"}],
+  [{x:.2,y:.5, label:"Middle Left"},{x:.5,y:.5, label:"Center"},       {x:.8,y:.5, label:"Middle Right"}],
+  [{x:.2,y:.85,label:"Bottom Left"},{x:.5,y:.85,label:"Bottom Center"},{x:.8,y:.85,label:"Bottom Right"}],
+];
+
+const STY_MODES = [
+  { id:"poster", label:"Soft Poster", hint:"Flat printed-color look" },
+  { id:"ink",    label:"Ink Outline", hint:"Clean lines, best for tracing dies" },
+  { id:"duotone",label:"Palette Wash", hint:"Recolored in your card palette" },
+];
+
+/* ── helpers ──────────────────────────────────────────────────── */
+function mkRng(seed){
+  let s=seed>>>0;
+  return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+}
+function hexToRgb(h){
+  h=h.replace("#","");
+  if(h.length===3) h=h.split("").map(x=>x+x).join("");
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+function lumOf(r){ return 0.299*r[0]+0.587*r[1]+0.114*r[2]; }
+function loadImg(src){
+  return new Promise((res,rej)=>{
+    const im=new Image();
+    im.onload=()=>res(im);
+    im.onerror=()=>rej(new Error("image load failed"));
+    im.src=src;
+  });
+}
+function fileToDataURL(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result);
+    r.onerror=()=>rej(new Error("file read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+/* ── photo stylization (all client-side, no network) ──────────── */
+function stylizePhoto(img, mode, strength, c1, c2, c3){
+  const maxDim=700;
+  let w=img.width, h=img.height;
+  const ar=w/h;
+  if(Math.max(w,h)>maxDim){
+    if(w>=h){ w=maxDim; h=Math.round(maxDim/ar); }
+    else    { h=maxDim; w=Math.round(maxDim*ar); }
+  }
+  const cv=document.createElement("canvas");
+  cv.width=w; cv.height=h;
+  const ctx=cv.getContext("2d");
+  ctx.drawImage(img,0,0,w,h);
+  const id=ctx.getImageData(0,0,w,h);
+  const d=id.data;
+
+  if(mode==="poster"){
+    const levels=Math.max(2,Math.round(2+strength*5));
+    const step=255/(levels-1);
+    for(let i=0;i<d.length;i+=4){
+      d[i]  =Math.round(Math.round(d[i]  /step)*step);
+      d[i+1]=Math.round(Math.round(d[i+1]/step)*step);
+      d[i+2]=Math.round(Math.round(d[i+2]/step)*step);
+    }
+    ctx.putImageData(id,0,0);
+  } else if(mode==="ink"){
+    const g=new Float32Array(w*h);
+    for(let i=0,p=0;i<d.length;i+=4,p++)
+      g[p]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    const out=ctx.createImageData(w,h), od=out.data;
+    const thr=18+(1-strength)*95;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const p=y*w+x;
+        let gx=0,gy=0;
+        if(x>0&&x<w-1&&y>0&&y<h-1){
+          const tl=g[p-w-1],tt=g[p-w],tr=g[p-w+1],
+                ll=g[p-1],            rr=g[p+1],
+                bl=g[p+w-1],bb=g[p+w],br=g[p+w+1];
+          gx=(tr+2*rr+br)-(tl+2*ll+bl);
+          gy=(bl+2*bb+br)-(tl+2*tt+tr);
+        }
+        const mag=Math.sqrt(gx*gx+gy*gy);
+        const v=mag>thr?0:255;
+        const o=p*4;
+        od[o]=od[o+1]=od[o+2]=v; od[o+3]=255;
+      }
+    }
+    ctx.putImageData(out,0,0);
+  } else {
+    const ramp=[hexToRgb(c1),hexToRgb(c2),hexToRgb(c3),[255,255,255]]
+                 .sort((a,b)=>lumOf(a)-lumOf(b));
+    const contrast=0.65+strength*1.7;
+    for(let i=0;i<d.length;i+=4){
+      let L=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])/255;
+      L=Math.min(1,Math.max(0,(L-0.5)*contrast+0.5));
+      const seg=L*(ramp.length-1);
+      const idx=Math.min(ramp.length-2,Math.floor(seg));
+      const f=seg-idx, a=ramp[idx], b=ramp[idx+1];
+      d[i]  =Math.round(a[0]+(b[0]-a[0])*f);
+      d[i+1]=Math.round(a[1]+(b[1]-a[1])*f);
+      d[i+2]=Math.round(a[2]+(b[2]-a[2])*f);
+    }
+    ctx.putImageData(id,0,0);
+  }
+  return cv.toDataURL("image/png");
+}
+
+/* ── drawing primitives ───────────────────────────────────────── */
+function drawLeaf(ctx,x,y,len,angle,color){
+  ctx.save();ctx.translate(x,y);ctx.rotate(angle);
+  ctx.beginPath();ctx.moveTo(0,0);
+  ctx.bezierCurveTo(len*.25,-len*.28,len*.75,-len*.28,len,0);
+  ctx.bezierCurveTo(len*.75,len*.28,len*.25,len*.28,0,0);
+  ctx.fillStyle=color;ctx.fill();ctx.restore();
+}
+function drawStar(ctx,cx,cy,r,pts,fill,stroke){
+  ctx.beginPath();
+  for(let i=0;i<pts*2;i++){
+    const a=(i/(pts*2))*Math.PI*2-Math.PI/2,rad=i%2===0?r:r*.42;
+    i===0?ctx.moveTo(cx+Math.cos(a)*rad,cy+Math.sin(a)*rad):ctx.lineTo(cx+Math.cos(a)*rad,cy+Math.sin(a)*rad);
+  }
+  ctx.closePath();ctx.fillStyle=fill;ctx.fill();
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.8;ctx.stroke();}
+}
+function drawHeart(ctx,cx,cy,r,fill){
+  ctx.save();ctx.translate(cx,cy);ctx.scale(r/28,r/28);
+  ctx.beginPath();ctx.moveTo(0,-8);
+  ctx.bezierCurveTo(-28,-28,-28,12,0,28);ctx.bezierCurveTo(28,12,28,-28,0,-8);
+  ctx.closePath();ctx.fillStyle=fill;ctx.fill();ctx.restore();
+}
+
+/* ── floral ───────────────────────────────────────────────────── */
+function pDaisy(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed),n=density*5+8;
+  for(let i=0;i<n;i++) drawLeaf(ctx,r()*W,r()*H,14+r()*18,r()*Math.PI*2,c3+"88");
+  for(let i=0;i<n;i++){
+    const cx=r()*W,cy=r()*H,rad=13+r()*18,col=[c1,c2,c3][i%3],ctr=[c2,c3,c1][i%3];
+    for(let p=0;p<8;p++){
+      const a=(p/8)*Math.PI*2;
+      ctx.beginPath();ctx.ellipse(cx+Math.cos(a)*rad*.62,cy+Math.sin(a)*rad*.62,rad*.3,rad*.17,a,0,Math.PI*2);
+      ctx.fillStyle=col+"CC";ctx.fill();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,rad*.23,0,Math.PI*2);ctx.fillStyle=ctr;ctx.fill();
+  }
+}
+function pRoses(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed);
+  function rose(cx,cy,rad,col1,col2){
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2-Math.PI/2;
+      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
+      ctx.beginPath();ctx.ellipse(0,-rad*.58,rad*.34,rad*.48,0,0,Math.PI*2);
+      ctx.fillStyle=col1+"BB";ctx.fill();ctx.restore();
+    }
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2+Math.PI/5-Math.PI/2;
+      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
+      ctx.beginPath();ctx.ellipse(0,-rad*.34,rad*.22,rad*.28,0,0,Math.PI*2);
+      ctx.fillStyle=col2+"DD";ctx.fill();ctx.restore();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,rad*.14,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
+  }
+  for(let i=0;i<density*3+5;i++) drawLeaf(ctx,r()*W,r()*H,12+r()*20,r()*Math.PI*2,c3+"88");
+  rose(W/2,H/2,Math.min(W,H)*.2,c1,c2);
+  const n=density*2+4;
+  for(let i=0;i<n;i++){
+    const a=(i/n)*Math.PI*2,d=Math.min(W,H)*(.22+r()*.2);
+    rose(W/2+Math.cos(a)*d,H/2+Math.sin(a)*d,14+r()*22,i%2===0?c1:c3,c2);
+  }
+}
+function pVines(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed),nv=Math.floor(density*.7)+2;
+  for(let v=0;v<nv;v++){
+    const sx=r()*W,sy=r()*H,ex=r()*W,ey=r()*H,cx1=r()*W,cy1=r()*H,cx2=r()*W,cy2=r()*H;
+    ctx.beginPath();ctx.moveTo(sx,sy);ctx.bezierCurveTo(cx1,cy1,cx2,cy2,ex,ey);
+    ctx.strokeStyle=c3+"BB";ctx.lineWidth=2;ctx.stroke();
+    const lc=density+4;
+    for(let l=0;l<lc;l++){
+      const t=l/lc,mt=1-t;
+      const bx=mt*mt*mt*sx+3*mt*mt*t*cx1+3*mt*t*t*cx2+t*t*t*ex;
+      const by=mt*mt*mt*sy+3*mt*mt*t*cy1+3*mt*t*t*cy2+t*t*t*ey;
+      const side=l%2===0?1:-1,len=10+r()*14;
+      const ang=Math.atan2(ey-sy,ex-sx)+side*(Math.PI/3+r()*.3);
+      drawLeaf(ctx,bx,by,len,ang,(l%2===0?c3:c1)+"BB");
+      if(l%3===0){ctx.beginPath();ctx.arc(bx,by,4,0,Math.PI*2);ctx.fillStyle=c2;ctx.fill();}
+    }
+  }
+}
+function pMagnolia(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed);
+  function mag(cx,cy,rad,col1,col2){
+    for(let i=0;i<6;i++){
+      const a=(i/6)*Math.PI*2-Math.PI/2;
+      ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
+      ctx.beginPath();ctx.moveTo(0,0);
+      ctx.bezierCurveTo(-rad*.3,-rad*.35,-rad*.2,-rad*.85,0,-rad);
+      ctx.bezierCurveTo(rad*.2,-rad*.85,rad*.3,-rad*.35,0,0);
+      ctx.fillStyle=col1+"CC";ctx.fill();
+      ctx.strokeStyle=col2+"44";ctx.lineWidth=.5;ctx.stroke();ctx.restore();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,rad*.16,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
+  }
+  for(let i=0;i<density*3+6;i++) drawLeaf(ctx,r()*W,r()*H,15+r()*22,r()*Math.PI*2,c3+"77");
+  mag(W/2,H/2,Math.min(W,H)*.24,c1,c2);
+  const n=density*2+4;
+  for(let i=0;i<n;i++){
+    const a=r()*Math.PI*2,d=Math.min(W,H)*(.2+r()*.3),rad=Math.min(W,H)*(.08+r()*.13);
+    mag(W/2+Math.cos(a)*d,H/2+Math.sin(a)*d,rad,i%2===0?c3:c1,c2);
+  }
+}
+
+/* ── geometric ────────────────────────────────────────────────── */
+function pHoneycomb(ctx,W,H,c1,c2,c3,density){
+  const sz=Math.max(12,48-density*4),sqH=sz*Math.sqrt(3),cols=[c1,c2,c3];
+  for(let row=-1;row<H/sqH+2;row++){
+    for(let col=-1;col<W/(sz*1.5)+2;col++){
+      const x=col*sz*1.5,y=row*sqH+(col%2===0?0:sqH/2),ci=Math.abs((row*3+col)%3);
+      ctx.beginPath();
+      for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2+Math.PI/6,px=x+Math.cos(a)*sz*.92,py=y+Math.sin(a)*sz*.92;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      ctx.closePath();ctx.fillStyle=cols[ci]+"55";ctx.fill();ctx.strokeStyle=cols[ci]+"BB";ctx.lineWidth=1;ctx.stroke();
+    }
+  }
+}
+function pMandala(ctx,W,H,c1,c2,c3,density){
+  const cx=W/2,cy=H/2,maxR=Math.min(W,H)*.44,layers=Math.min(8,density+3),cols=[c1,c2,c3];
+  for(let l=layers;l>=1;l--){
+    const r=(l/layers)*maxR,innerR=((l-1)/layers)*maxR,midR=(r+innerR)/2,numP=l*6,col=cols[(l-1)%3];
+    for(let i=0;i<numP;i++){
+      const a=(i/numP)*Math.PI*2,px=cx+Math.cos(a)*midR,py=cy+Math.sin(a)*midR;
+      ctx.save();ctx.translate(px,py);ctx.rotate(a+Math.PI/2);
+      ctx.beginPath();ctx.ellipse(0,0,(r-innerR)*.45,maxR*.055,0,0,Math.PI*2);
+      ctx.fillStyle=col+(l%2===0?"88":"55");ctx.fill();ctx.strokeStyle=col+"AA";ctx.lineWidth=.5;ctx.stroke();ctx.restore();
+    }
+  }
+  ctx.beginPath();ctx.arc(cx,cy,maxR/layers*.7,0,Math.PI*2);ctx.fillStyle=c1;ctx.fill();
+}
+function pDiagonal(ctx,W,H,c1,c2,c3,density){
+  const sw=Math.max(18,52-density*4),cols=[c1+"99",c2+"99",c3+"99"],diag=Math.sqrt(W*W+H*H)+sw*4;
+  ctx.save();ctx.translate(W/2,H/2);ctx.rotate(Math.PI/4);
+  const n=Math.ceil(diag/sw)+2;
+  for(let i=-n;i<=n;i++){ctx.fillStyle=cols[Math.abs(i)%3];ctx.fillRect(i*sw-sw/2,-diag/2,sw,diag);}
+  ctx.restore();
+}
+function pArgyle(ctx,W,H,c1,c2,c3,density){
+  const ds=Math.max(28,75-density*5),cols=[c1,c2,c3];
+  for(let row=-2;row<H/(ds*.55)+2;row++){
+    for(let col=-2;col<W/ds+2;col++){
+      const cx=col*ds+(row%2===0?0:ds/2),cy=row*ds*.55,ci=Math.abs((row+col)%3);
+      ctx.save();ctx.translate(cx,cy);
+      ctx.beginPath();ctx.moveTo(0,-ds*.53);ctx.lineTo(ds*.46,0);ctx.lineTo(0,ds*.53);ctx.lineTo(-ds*.46,0);ctx.closePath();
+      ctx.fillStyle=cols[ci]+"66";ctx.fill();ctx.strokeStyle=cols[ci]+"AA";ctx.lineWidth=1;ctx.stroke();ctx.restore();
+    }
+  }
+}
+
+/* ── holiday ──────────────────────────────────────────────────── */
+function pSnowflake(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed);
+  function flake(cx,cy,rad,col1,col2){
+    for(let i=0;i<6;i++){
+      ctx.save();ctx.translate(cx,cy);ctx.rotate((i/6)*Math.PI*2);
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(rad,0);ctx.strokeStyle=col1;ctx.lineWidth=rad>20?2:1;ctx.stroke();
+      for(let b=1;b<=3;b++){
+        const bx=(b/4)*rad,bl=rad*.28*(1-b*.12);
+        ctx.beginPath();ctx.moveTo(bx,0);ctx.lineTo(bx+bl*.707,bl*.707);ctx.strokeStyle=col2;ctx.lineWidth=1;ctx.stroke();
+        ctx.beginPath();ctx.moveTo(bx,0);ctx.lineTo(bx+bl*.707,-bl*.707);ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,rad*.09,0,Math.PI*2);ctx.fillStyle=col2;ctx.fill();
+  }
+  flake(W/2,H/2,Math.min(W,H)*.22,c1,c2);
+  for(let i=0;i<density*3+4;i++) flake(r()*W,r()*H,8+r()*28,i%2===0?c1:c3,c2);
+}
+function pHearts(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed),n=density*5+10,cols=[c1+"CC",c2+"CC",c3+"CC"];
+  for(let i=0;i<n;i++){ctx.save();ctx.translate(r()*W,r()*H);ctx.rotate(r()*.6-.3);drawHeart(ctx,0,0,10+r()*26,cols[i%3]);ctx.restore();}
+}
+function pStars(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed),cols=[c1,c2,c3];
+  drawStar(ctx,W/2,H/2,Math.min(W,H)*.22,8,c1+"BB",c2);
+  for(let i=0;i<density*4+8;i++) drawStar(ctx,r()*W,r()*H,8+r()*22,4+Math.floor(r()*4),cols[i%3]+"BB",cols[(i+1)%3]);
+}
+function pTree(ctx,W,H,c1,c2,c3,density,seed){
+  const r=mkRng(seed);
+  function tree(cx,cy,h){
+    ctx.fillStyle=c3;ctx.fillRect(cx-h*.06,cy+h*.55,h*.12,h*.2);
+    for(let l=0;l<4;l++){
+      const ly=cy-h*.8+l*h*.48,lw=h*.28+l*h*.22,lh=h*.38;
+      ctx.beginPath();ctx.moveTo(cx,ly);ctx.lineTo(cx-lw,ly+lh);ctx.lineTo(cx+lw,ly+lh);ctx.closePath();
+      ctx.fillStyle=(l%2===0?c1:c2)+"CC";ctx.fill();ctx.strokeStyle=c3+"88";ctx.lineWidth=.5;ctx.stroke();
+    }
+    drawStar(ctx,cx,cy-h*.86,h*.1,5,c2,c3);
+  }
+  tree(W/2,H/2,Math.min(W,H)*.55);
+  for(let i=0;i<density*2+3;i++) tree(r()*W,r()*H,25+r()*55);
+}
+
+/* ── frames ───────────────────────────────────────────────────── */
+function pNested(ctx,W,H,c1,c2,c3){
+  const cols=[c1,c2,c3,c1,c2,c3];
+  for(let l=0;l<6;l++){const m=(l+1)*Math.min(W,H)*.036;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=cols[l];ctx.lineWidth=1.5+(5-l)*.3;ctx.stroke();}
+}
+function pScallop(ctx,W,H,c1,c2,c3){
+  const r=14,cols=[c1,c2,c3];
+  function row(horiz,len,flip){
+    const n=Math.floor(len/(r*2)),off=(len-n*r*2)/2+r;
+    for(let i=0;i<n;i++){
+      const pos=off+i*r*2,cx=horiz?pos:(flip?W-r:r),cy=horiz?(flip?H-r:r):pos;
+      ctx.beginPath();ctx.arc(cx,cy,r*.9,0,Math.PI*2);ctx.fillStyle=cols[i%3]+"66";ctx.fill();ctx.strokeStyle=cols[i%3];ctx.lineWidth=1;ctx.stroke();
+    }
+  }
+  row(true,W,false);row(true,W,true);row(false,H,false);row(false,H,true);
+  const m=r*2+4;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=c1;ctx.lineWidth=1;ctx.stroke();
+}
+function pFlourish(ctx,W,H,c1,c2,c3){
+  function corner(ox,oy,sx,sy){
+    ctx.save();ctx.translate(ox,oy);ctx.scale(sx,sy);
+    ctx.beginPath();
+    for(let t=.3;t<=Math.PI*2.5;t+=.05){const rad=t*7;t===.3?ctx.moveTo(Math.cos(t)*rad,Math.sin(t)*rad):ctx.lineTo(Math.cos(t)*rad,Math.sin(t)*rad);}
+    ctx.strokeStyle=c1;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(55,0);ctx.strokeStyle=c2;ctx.lineWidth=1.2;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,55);ctx.stroke();
+    for(let d=1;d<=4;d++){ctx.beginPath();ctx.arc(d*13,0,2.5,0,Math.PI*2);ctx.fillStyle=c3;ctx.fill();ctx.beginPath();ctx.arc(0,d*13,2.5,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  }
+  corner(0,0,1,1);corner(W,0,-1,1);corner(0,H,1,-1);corner(W,H,-1,-1);
+  const m=68;ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=c1+"77";ctx.lineWidth=1;ctx.stroke();
+  ctx.beginPath();ctx.rect(m+4,m+4,W-(m+4)*2,H-(m+4)*2);ctx.strokeStyle=c2+"55";ctx.lineWidth=.8;ctx.stroke();
+}
+function pRibbon(ctx,W,H,c1,c2,c3){
+  const bw=22,cols=[c1,c2,c3],n=Math.ceil(Math.max(W,H)/bw)+1;
+  function strip(x,y,w,h,col){ctx.fillStyle=col+"88";ctx.fillRect(x,y,w,h);ctx.strokeStyle=col+"CC";ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);}
+  for(let i=0;i<n;i++){const ci=i%3;strip(i*bw,0,bw,bw,cols[ci]);strip(i*bw,H-bw,bw,bw,cols[(ci+1)%3]);strip(0,i*bw,bw,bw,cols[(ci+2)%3]);strip(W-bw,i*bw,bw,bw,cols[ci]);}
+  [bw+4,bw+8].forEach((m,i)=>{ctx.beginPath();ctx.rect(m,m,W-m*2,H-m*2);ctx.strokeStyle=[c1,c2][i];ctx.lineWidth=1.5-i*.5;ctx.stroke();});
+}
+
+/* ── text renderer ────────────────────────────────────────────── */
+function renderText(ctx,W,H,phrase,fontFamily,fontSize,bold,textColor,shadow,align,yFrac,spacing){
+  if(!phrase.trim()) return;
+  const weight=bold?"bold":"normal";
+  ctx.font=`${weight} ${fontSize}px "${fontFamily}"`;
+  ctx.textAlign=align;ctx.textBaseline="middle";
+  try{ ctx.letterSpacing=spacing+"px"; }catch(e){}
+  const margin=24,maxW=W-margin*2,x=align==="left"?margin:align==="right"?W-margin:W/2;
+  const words=phrase.split(" ");const lines=[];let cur="";
+  for(const w of words){const test=cur?cur+" "+w:w;if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w;}else cur=test;}
+  if(cur) lines.push(cur);
+  const lh=fontSize*1.28,totalH=lines.length*lh,startY=yFrac*H-(totalH/2)+(lh/2);
+  lines.forEach((line,i)=>{
+    const ly=startY+i*lh;
+    if(shadow){ctx.shadowColor="rgba(0,0,0,0.55)";ctx.shadowBlur=fontSize*.18;ctx.shadowOffsetX=fontSize*.06;ctx.shadowOffsetY=fontSize*.06;}
+    ctx.fillStyle=textColor;ctx.fillText(line,x,ly);
+    ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetX=0;ctx.shadowOffsetY=0;
+  });
+}
+
+/* ── pattern dispatch ─────────────────────────────────────────── */
+function renderPattern(canvas,cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern){
+  const{W,H}=SIZES[sizeKey];
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  if(noPattern) return;
+  const map={
+    "floral:daisy":()=>pDaisy(ctx,W,H,c1,c2,c3,density,seed),
+    "floral:roses":()=>pRoses(ctx,W,H,c1,c2,c3,density,seed),
+    "floral:vines":()=>pVines(ctx,W,H,c1,c2,c3,density,seed),
+    "floral:magnolia":()=>pMagnolia(ctx,W,H,c1,c2,c3,density,seed),
+    "geometric:honeycomb":()=>pHoneycomb(ctx,W,H,c1,c2,c3,density),
+    "geometric:mandala":()=>pMandala(ctx,W,H,c1,c2,c3,density),
+    "geometric:diagonal":()=>pDiagonal(ctx,W,H,c1,c2,c3,density),
+    "geometric:argyle":()=>pArgyle(ctx,W,H,c1,c2,c3,density),
+    "holiday:snowflake":()=>pSnowflake(ctx,W,H,c1,c2,c3,density,seed),
+    "holiday:hearts":()=>pHearts(ctx,W,H,c1,c2,c3,density,seed),
+    "holiday:stars":()=>pStars(ctx,W,H,c1,c2,c3,density,seed),
+    "holiday:tree":()=>pTree(ctx,W,H,c1,c2,c3,density,seed),
+    "frame:nested":()=>pNested(ctx,W,H,c1,c2,c3),
+    "frame:scallop":()=>pScallop(ctx,W,H,c1,c2,c3),
+    "frame:flourish":()=>pFlourish(ctx,W,H,c1,c2,c3),
+    "frame:ribbon":()=>pRibbon(ctx,W,H,c1,c2,c3),
+  };
+  const fn=map[`${cat}:${patId}`];
+  if(fn) fn();
+}
+
+/* ── shared styles ────────────────────────────────────────────── */
+const SECT_LBL={margin:"0 0 13px",fontSize:11,letterSpacing:".16em",textTransform:"uppercase",color:INK,fontWeight:600};
+const FLD_LBL ={display:"block",fontSize:10.5,letterSpacing:".05em",textTransform:"uppercase",color:MUTE,fontWeight:600,marginBottom:7};
+const INP={width:"100%",padding:"9px 11px",border:`1px solid ${LINE}`,borderRadius:8,fontSize:13,color:INK,background:CARD};
+const seg=a=>({border:`1px solid ${a?INK:LINE}`,background:a?INK:CARD,color:a?"#fff":INK,borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:a?600:500,padding:"9px 8px",transition:"background .15s,color .15s,border-color .15s"});
+const RANGE_ENDS={display:"flex",justifyContent:"space-between",fontSize:10,color:MUTE,marginTop:3};
+
+/* ── small components ─────────────────────────────────────────── */
+function Section({title,first,children}){
+  return (
+    <section style={{padding:"17px 16px",borderTop:first?"none":`1px solid ${LINE}`}}>
+      <h2 style={SECT_LBL}>{title}</h2>
+      {children}
+    </section>
+  );
+}
+function FlowerMark(){
+  const pts=[0,1,2,3,4].map(i=>{
+    const a=(i/5)*Math.PI*2-Math.PI/2;
+    return {x:12+Math.cos(a)*4.6,y:12+Math.sin(a)*4.6,deg:a*180/Math.PI+90};
+  });
+  return (
+    <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {pts.map((p,i)=>(
+        <ellipse key={i} cx={p.x} cy={p.y} rx="3.5" ry="4.9" fill="#fff"
+          transform={`rotate(${p.deg} ${p.x} ${p.y})`}/>
+      ))}
+      <circle cx="12" cy="12" r="3" fill={ACCENT}/>
+    </svg>
+  );
+}
+
+/* ── app ──────────────────────────────────────────────────────── */
+function App(){
+  const[noPattern,setNoPattern]=useState(false);
+  const[cat,setCat]       =useState("floral");
+  const[patId,setPatId]   =useState("daisy");
+  const[palIdx,setPalIdx] =useState(0);
+  const[c1,setC1]         =useState(PALETTES[0].c1);
+  const[c2,setC2]         =useState(PALETTES[0].c2);
+  const[c3,setC3]         =useState(PALETTES[0].c3);
+  const[density,setDensity]=useState(5);
+  const[bg,setBg]         =useState("#FFFFFF");
+  const[sizeKey,setSizeKey]=useState("p57");
+  const[seed,setSeed]     =useState(42);
+  /* text */
+  const[phrase,setPhrase] =useState("");
+  const[fontFam,setFontFam]=useState("Dancing Script");
+  const[fontSize,setFS]   =useState(48);
+  const[bold,setBold]     =useState(false);
+  const[shadow,setShadow] =useState(true);
+  const[tColor,setTColor] =useState(INK);
+  const[tAlign,setTAlign] =useState("center");
+  const[tY,setTY]         =useState(.5);
+  const[spacing,setSpacing]=useState(0);
+  const[showFP,setShowFP] =useState(false);
+  const[fontsReady,setFontsReady]=useState(false);
+  /* photo */
+  const[photoURL,setPhotoURL]=useState(null);
+  const[photoErr,setPhotoErr]=useState("");
+  const[styMode,setStyMode]  =useState("poster");
+  const[styStrength,setStyStrength]=useState(.5);
+  const[styPreview,setStyPreview] =useState(null);
+  /* placed design */
+  const[placed,setPlaced] =useState(null);
+  const[dX,setDX]         =useState(.5);
+  const[dY,setDY]         =useState(.5);
+  const[dSize,setDSize]   =useState(.5);
+
+  const canvasRef=useRef(null);
+  const photoImgRef=useRef(null);
+  const fileRef=useRef(null);
+  const drawSeq=useRef(0);
+
+  useEffect(()=>{
+    if(document.fonts&&document.fonts.ready){
+      document.fonts.ready.then(()=>setFontsReady(true));
+    } else { setFontsReady(true); }
+  },[]);
+
+  /* full canvas redraw: background, pattern, placed photo, text */
+  const redraw=useCallback(async()=>{
+    const cv=canvasRef.current;
+    if(!cv) return;
+    const seq=++drawSeq.current;
+    renderPattern(cv,cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern);
+    const{W,H}=SIZES[sizeKey];
+    const ctx=cv.getContext("2d");
+    if(placed){
+      try{
+        const im=await loadImg(placed);
+        if(seq!==drawSeq.current) return;
+        const ar=im.width/im.height;
+        const s=dSize*Math.min(W,H);
+        let dw=s,dh=s;
+        if(ar>=1){ dw=s; dh=s/ar; } else { dh=s; dw=s*ar; }
+        ctx.drawImage(im,dX*W-dw/2,dY*H-dh/2,dw,dh);
+      }catch(e){}
+    }
+    if(seq!==drawSeq.current) return;
+    if(phrase.trim())
+      renderText(ctx,W,H,phrase,fontFam,fontSize,bold,tColor,shadow,tAlign,tY,spacing);
+  },[cat,patId,c1,c2,c3,density,seed,bg,sizeKey,noPattern,placed,dX,dY,dSize,
+     phrase,fontFam,fontSize,bold,tColor,shadow,tAlign,tY,spacing]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const run=()=>{ if(!cancelled) redraw(); };
+    if(fontsReady) run();
+    else if(document.fonts&&document.fonts.ready) document.fonts.ready.then(run);
+    else run();
+    return ()=>{ cancelled=true; };
+  },[redraw,fontsReady]);
+
+  /* recompute stylized photo preview */
+  useEffect(()=>{
+    if(!photoImgRef.current){ setStyPreview(null); return; }
+    try{ setStyPreview(stylizePhoto(photoImgRef.current,styMode,styStrength,c1,c2,c3)); }
+    catch(e){ setStyPreview(null); }
+  },[photoURL,styMode,styStrength,c1,c2,c3]);
+
+  const applyPal=i=>{const p=PALETTES[i];setPalIdx(i);setC1(p.c1);setC2(p.c2);setC3(p.c3);};
+  const changeCat=c=>{setCat(c);setPatId(PATS[c][0].id);};
+
+  const onPhoto=async e=>{
+    const f=e.target.files&&e.target.files[0];
+    e.target.value="";
+    if(!f) return;
+    setPhotoErr("");
+    try{
+      const url=await fileToDataURL(f);
+      const im=await loadImg(url);
+      photoImgRef.current=im;
+      setPhotoURL(url);
+    }catch(err){
+      setPhotoErr("That file would not open. Please try a JPG or PNG photo.");
+    }
+  };
+
+  const download=()=>{
+    const cv=canvasRef.current;
+    if(!cv) return;
+    const a=document.createElement("a");
+    a.download="skivvez-card.png";
+    a.href=cv.toDataURL("image/png");
+    a.click();
+  };
+
+  const canvasLabel=`${SIZES[sizeKey].label.trim()} greeting card preview`
+    +(placed?", with a photo design":"")
+    +(phrase.trim()?`, with the phrase "${phrase.trim()}"`:"");
+
+  return (
+  <div className="studio">
+
+    {/* header */}
+    <header style={{display:"flex",alignItems:"center",gap:13,padding:"14px 22px",
+                    borderBottom:`1px solid ${LINE}`,flexShrink:0,background:CARD}}>
+      <span style={{width:34,height:34,borderRadius:9,background:ACCENT,
+                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        <FlowerMark/>
+      </span>
+      <div>
+        <h1 style={{margin:0,fontFamily:'"Fraunces",Georgia,serif',fontSize:21,fontWeight:600,
+                    color:INK,letterSpacing:".01em",lineHeight:1.1}}>
+          Christine&rsquo;s Skivvez Studio
+        </h1>
+        <div style={{fontSize:10.5,letterSpacing:".15em",textTransform:"uppercase",
+                     color:MUTE,marginTop:3,fontWeight:600}}>
+          Die-cut card design studio
+        </div>
+      </div>
+    </header>
+
+    <div className="body">
+
+      {/* ── controls ── */}
+      <div className="controls">
+        <div className="sections">
+
+          {/* PATTERN */}
+          <Section title="Background Pattern" first>
+            <button onClick={()=>setNoPattern(v=>!v)} aria-pressed={noPattern}
+              style={{width:"100%",marginBottom:11,padding:"10px 11px",textAlign:"left",
+                      border:`1px solid ${noPattern?INK:LINE}`,borderRadius:8,cursor:"pointer",
+                      background:noPattern?ACCENT_SOFT:CARD,color:INK,fontSize:12,
+                      display:"flex",alignItems:"center",gap:9}}>
+              <span aria-hidden="true" style={{fontSize:15,lineHeight:1}}>{noPattern?"◉":"○"}</span>
+              <span>No background pattern <span style={{color:MUTE}}>(clean card)</span></span>
+            </button>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,opacity:noPattern?.45:1}}>
+              {CATS.map(c=>(
+                <button key={c.id} onClick={()=>changeCat(c.id)} disabled={noPattern}
+                  aria-pressed={cat===c.id}
+                  style={{...seg(cat===c.id),display:"flex",flexDirection:"column",alignItems:"center",
+                          gap:3,padding:"9px 4px",cursor:noPattern?"default":"pointer"}}>
+                  <span aria-hidden="true" style={{fontSize:16}}>{c.icon}</span>
+                  <span>{c.label}</span>
+                </button>
+              ))}
+            </div>
+            {!noPattern&&(
+              <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:9}}>
+                {PATS[cat].map(p=>(
+                  <button key={p.id} onClick={()=>setPatId(p.id)} aria-pressed={patId===p.id}
+                    style={{...seg(patId===p.id),textAlign:"left",padding:"9px 11px"}}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!noPattern&&(
+              <div style={{marginTop:13}}>
+                <label>
+                  <span style={FLD_LBL}>Density &middot; {density}</span>
+                  <input type="range" min={1} max={10} value={density}
+                    onChange={e=>setDensity(+e.target.value)}/>
+                </label>
+                <div style={RANGE_ENDS}><span>Light</span><span>Dense</span></div>
+                <button onClick={()=>setSeed(Math.floor(Math.random()*99999))}
+                  style={{width:"100%",marginTop:10,padding:"9px",background:CARD,color:INK,
+                          border:`1px solid ${LINE}`,borderRadius:8,cursor:"pointer",
+                          fontSize:12,fontWeight:600}}>
+                  Shuffle Pattern
+                </button>
+              </div>
+            )}
+          </Section>
+
+          {/* CARD SIZE */}
+          <Section title="Card Size">
+            <label>
+              <span style={FLD_LBL}>Greeting card shape</span>
+              <select value={sizeKey} onChange={e=>setSizeKey(e.target.value)} style={INP}>
+                {Object.entries(SIZES).map(([k,v])=>(
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </label>
+          </Section>
+
+          {/* PALETTE */}
+          <Section title="Color Palette">
+            <div role="group" aria-label="Preset palettes"
+                 style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:11}}>
+              {PALETTES.map((p,i)=>(
+                <button key={i} onClick={()=>applyPal(i)} aria-pressed={palIdx===i}
+                  aria-label={`${p.name} palette`}
+                  style={{padding:"6px 4px",border:`1.5px solid ${palIdx===i?INK:LINE}`,
+                          borderRadius:8,background:CARD,cursor:"pointer"}}>
+                  <span style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>
+                    {[p.c1,p.c2,p.c3].map((c,j)=>(
+                      <span key={j} style={{width:13,height:13,borderRadius:"50%",background:c,
+                                            border:`1px solid ${LINE}`}}/>
+                    ))}
+                  </span>
+                  <span style={{fontSize:9.5,color:MUTE}}>{p.name}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:7}}>
+              {[["Color 1",c1,setC1],["Color 2",c2,setC2],["Color 3",c3,setC3]].map(([lbl,val,set])=>(
+                <label key={lbl} style={{flex:1,textAlign:"center"}}>
+                  <span style={{...FLD_LBL,marginBottom:4}}>{lbl}</span>
+                  <input type="color" value={val} aria-label={lbl}
+                    onChange={e=>{set(e.target.value);setPalIdx(-1);}}
+                    style={{width:"100%",height:30,border:`1px solid ${LINE}`,borderRadius:7,
+                            cursor:"pointer",padding:2,background:CARD}}/>
+                </label>
+              ))}
+            </div>
+          </Section>
+
+          {/* BACKGROUND */}
+          <Section title="Card Background">
+            <span style={FLD_LBL}>Paper color</span>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
+              {["#FFFFFF","#FBF7F0","#F1ECE3","#EDF1F2","#F6EEF0","#EFF2EC"].map(b=>(
+                <button key={b} onClick={()=>setBg(b)} aria-pressed={bg===b}
+                  aria-label={`Background ${b}`}
+                  style={{width:30,height:30,borderRadius:7,background:b,cursor:"pointer",
+                          border:bg===b?`2.5px solid ${INK}`:`1px solid ${LINE}`}}/>
+              ))}
+              <input type="color" value={bg} onChange={e=>setBg(e.target.value)}
+                aria-label="Custom background color"
+                style={{width:30,height:30,border:`1px solid ${LINE}`,borderRadius:7,
+                        cursor:"pointer",padding:2,background:CARD}}/>
+            </div>
+          </Section>
+
+          {/* PHOTO */}
+          <Section title="Add a Photo">
+            <p style={{margin:"0 0 11px",fontSize:11.5,color:MUTE,lineHeight:1.5}}>
+              Upload a photo of a flower (or anything else) and turn it into a clean
+              design for your card.
+            </p>
+            <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto}
+              aria-label="Upload a photo"
+              style={{position:"absolute",width:1,height:1,padding:0,margin:-1,
+                      overflow:"hidden",clip:"rect(0 0 0 0)",border:0}}/>
+            <button onClick={()=>fileRef.current&&fileRef.current.click()}
+              style={{width:"100%",padding:"11px",background:CARD,color:INK,
+                      border:`1.5px dashed ${ACCENT}`,borderRadius:8,cursor:"pointer",
+                      fontSize:12.5,fontWeight:600}}>
+              {photoURL?"Choose a different photo":"Choose a photo…"}
+            </button>
+            {photoErr&&(
+              <div role="alert" style={{marginTop:8,fontSize:11,color:ACCENT_DK,
+                background:ACCENT_SOFT,border:`1px solid ${ACCENT}`,borderRadius:7,padding:"7px 9px"}}>
+                {photoErr}
+              </div>
+            )}
+
+            {photoURL&&(
+              <div style={{marginTop:13}}>
+                <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:13}}>
+                  <img src={photoURL} alt="The photo you uploaded"
+                    style={{width:62,height:62,objectFit:"cover",borderRadius:8,
+                            border:`1px solid ${LINE}`,flexShrink:0}}/>
+                  <p style={{margin:0,fontSize:11,color:MUTE,lineHeight:1.5}}>
+                    Pick a style below. The preview updates as you adjust it.
+                  </p>
+                </div>
+
+                <span style={FLD_LBL}>Style</span>
+                <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:11}}>
+                  {STY_MODES.map(m=>(
+                    <button key={m.id} onClick={()=>setStyMode(m.id)} aria-pressed={styMode===m.id}
+                      style={{...seg(styMode===m.id),textAlign:"left",padding:"8px 11px"}}>
+                      <span style={{display:"block"}}>{m.label}</span>
+                      <span style={{display:"block",fontSize:10,fontWeight:400,marginTop:2,
+                                    color:styMode===m.id?"rgba(255,255,255,.78)":MUTE}}>
+                        {m.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <label>
+                  <span style={FLD_LBL}>
+                    {styMode==="ink"?"Line detail":"Strength"} &middot; {Math.round(styStrength*100)}%
+                  </span>
+                  <input type="range" min={0} max={100} value={Math.round(styStrength*100)}
+                    onChange={e=>setStyStrength(+e.target.value/100)}/>
+                </label>
+
+                {styPreview&&(
+                  <div style={{marginTop:12}}>
+                    <span style={FLD_LBL}>Preview</span>
+                    <div style={{border:`1px solid ${LINE}`,borderRadius:8,overflow:"hidden",
+                                 background:"#fff",display:"flex",justifyContent:"center"}}>
+                      <img src={styPreview} alt="Stylized version of your photo"
+                        style={{maxWidth:"100%",maxHeight:150,display:"block"}}/>
+                    </div>
+                    <button onClick={()=>{setPlaced(styPreview);}}
+                      style={{width:"100%",marginTop:9,padding:"11px",background:ACCENT_DK,
+                              color:"#fff",border:"none",borderRadius:8,cursor:"pointer",
+                              fontSize:12.5,fontWeight:600}}>
+                      {placed===styPreview?"Added to card ✓":"Use this on my card"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {placed&&(
+              <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${LINE}`}}>
+                <span style={FLD_LBL}>Place on card</span>
+                <div style={{display:"flex",gap:13,alignItems:"flex-start"}}>
+                  <div role="group" aria-label="Photo position"
+                       style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,flexShrink:0}}>
+                    {POS_GRID.flat().map((pos,i)=>{
+                      const on=Math.abs(dX-pos.x)<.05&&Math.abs(dY-pos.y)<.05;
+                      return (
+                        <button key={i} aria-label={pos.label} aria-pressed={on}
+                          onClick={()=>{setDX(pos.x);setDY(pos.y);}}
+                          style={{width:24,height:24,borderRadius:6,cursor:"pointer",
+                                  border:`1.5px solid ${on?INK:LINE}`,
+                                  background:on?INK:CARD}}/>
+                      );
+                    })}
+                  </div>
+                  <label style={{flex:1}}>
+                    <span style={{...FLD_LBL,marginBottom:4}}>Size &middot; {Math.round(dSize*100)}%</span>
+                    <input type="range" min={15} max={95} value={Math.round(dSize*100)}
+                      onChange={e=>setDSize(+e.target.value/100)}/>
+                    <div style={RANGE_ENDS}><span>Small</span><span>Large</span></div>
+                  </label>
+                </div>
+                <button onClick={()=>setPlaced(null)}
+                  style={{width:"100%",marginTop:10,padding:"8px",background:"transparent",
+                          color:MUTE,border:`1px solid ${LINE}`,borderRadius:8,cursor:"pointer",
+                          fontSize:11}}>
+                  Remove photo from card
+                </button>
+              </div>
+            )}
+          </Section>
+
+          {/* TEXT */}
+          <Section title="Text and Phrases">
+            <label>
+              <span style={FLD_LBL}>Your phrase</span>
+              <textarea value={phrase} onChange={e=>setPhrase(e.target.value)} rows={2}
+                placeholder="Happy Birthday, With Love, Thank You…"
+                style={{...INP,resize:"none"}}/>
+            </label>
+
+            <div style={{marginTop:12}}>
+              <span style={FLD_LBL}>Font</span>
+              <button type="button" onClick={()=>setShowFP(v=>!v)}
+                aria-haspopup="listbox" aria-expanded={showFP}
+                style={{...INP,display:"flex",justifyContent:"space-between",alignItems:"center",
+                        cursor:"pointer",textAlign:"left"}}>
+                <span style={{fontFamily:`"${fontFam}"`,fontSize:17}}>{fontFam}</span>
+                <span aria-hidden="true" style={{fontSize:10,color:MUTE}}>{showFP?"▲":"▼"}</span>
+              </button>
+              {showFP&&(
+                <ul role="listbox" aria-label="Font"
+                    onKeyDown={e=>{ if(e.key==="Escape") setShowFP(false); }}
+                    style={{listStyle:"none",margin:"4px 0 0",padding:0,border:`1px solid ${LINE}`,
+                            borderRadius:8,background:CARD,maxHeight:208,overflowY:"auto"}}>
+                  {FONTS.map(f=>(
+                    <li key={f.family} role="option" aria-selected={fontFam===f.family}>
+                      <button type="button" onClick={()=>{setFontFam(f.family);setShowFP(false);}}
+                        style={{width:"100%",textAlign:"left",padding:"8px 11px",border:"none",
+                                cursor:"pointer",fontFamily:`"${f.family}"`,fontSize:17,
+                                background:fontFam===f.family?INK:"transparent",
+                                color:fontFam===f.family?"#fff":INK}}>
+                        {f.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div style={{marginTop:12}}>
+              <label>
+                <span style={FLD_LBL}>Size &middot; {fontSize}px</span>
+                <input type="range" min={18} max={96} value={fontSize}
+                  onChange={e=>setFS(+e.target.value)}/>
+              </label>
+            </div>
+            <div style={{marginTop:10}}>
+              <label>
+                <span style={FLD_LBL}>Letter spacing &middot; {spacing}px</span>
+                <input type="range" min={-2} max={20} value={spacing}
+                  onChange={e=>setSpacing(+e.target.value)}/>
+              </label>
+            </div>
+
+            <div style={{marginTop:12}}>
+              <span style={FLD_LBL}>Text color</span>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
+                {[c1,c2,c3,INK,"#FFFFFF",ACCENT].map((col,i)=>(
+                  <button key={i} onClick={()=>setTColor(col)} aria-pressed={tColor===col}
+                    aria-label={`Text color ${col}`}
+                    style={{width:30,height:30,borderRadius:7,background:col,cursor:"pointer",
+                            border:tColor===col?`2.5px solid ${INK}`:`1px solid ${LINE}`}}/>
+                ))}
+                <input type="color" value={tColor} onChange={e=>setTColor(e.target.value)}
+                  aria-label="Custom text color"
+                  style={{width:30,height:30,border:`1px solid ${LINE}`,borderRadius:7,
+                          cursor:"pointer",padding:2,background:CARD}}/>
+              </div>
+            </div>
+
+            <div style={{marginTop:12}}>
+              <span style={FLD_LBL}>Alignment</span>
+              <div style={{display:"flex",gap:6}}>
+                {[["left","Left"],["center","Center"],["right","Right"]].map(([v,lbl])=>(
+                  <button key={v} onClick={()=>setTAlign(v)} aria-pressed={tAlign===v}
+                    style={{...seg(tAlign===v),flex:1}}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{marginTop:12}}>
+              <span style={FLD_LBL}>Text position</span>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                {[["Top",.1],["Middle",.5],["Bottom",.88]].map(([lbl,v])=>(
+                  <button key={lbl} onClick={()=>setTY(v)} aria-pressed={Math.abs(tY-v)<.001}
+                    style={{...seg(Math.abs(tY-v)<.001),flex:1}}>{lbl}</button>
+                ))}
+              </div>
+              <label>
+                <span style={{...FLD_LBL,marginBottom:4}}>Fine-tune &middot; {Math.round(tY*100)}%</span>
+                <input type="range" min={5} max={95} value={Math.round(tY*100)}
+                  onChange={e=>setTY(+e.target.value/100)}/>
+              </label>
+            </div>
+
+            <div style={{display:"flex",gap:6,marginTop:12}}>
+              <button onClick={()=>setBold(v=>!v)} aria-pressed={bold}
+                style={{...seg(bold),flex:1}}>Bold</button>
+              <button onClick={()=>setShadow(v=>!v)} aria-pressed={shadow}
+                style={{...seg(shadow),flex:1}}>Shadow</button>
+            </div>
+          </Section>
+
+        </div>{/* /.sections */}
+
+        <div className="foot">
+          <button onClick={download}
+            style={{width:"100%",padding:"13px",background:INK,color:"#fff",border:"none",
+                    borderRadius:9,cursor:"pointer",fontSize:13.5,fontWeight:600,
+                    letterSpacing:".02em"}}>
+            Download Card as PNG
+          </button>
+        </div>
+      </div>{/* /.controls */}
+
+      {/* ── preview ── */}
+      <div className="preview" id="preview" tabIndex={-1}>
+        <div style={{fontFamily:'"Fraunces",Georgia,serif',fontStyle:"italic",fontSize:14,
+                     color:MUTE}}>Live preview</div>
+        <div style={{boxShadow:"0 16px 40px rgba(34,31,29,.22)",borderRadius:2,
+                     background:CARD,lineHeight:0}}>
+          <canvas ref={canvasRef} role="img" aria-label={canvasLabel}
+            style={{display:"block",maxWidth:"100%",maxHeight:600,borderRadius:2}}/>
+        </div>
+        <div style={{fontSize:10.5,letterSpacing:".07em",color:MUTE}}>
+          {SIZES[sizeKey].label} &middot; {SIZES[sizeKey].W} &times; {SIZES[sizeKey].H} px
+        </div>
+      </div>
+
+    </div>{/* /.body */}
+  </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+<!-- iframe height-sender: lets the embedding Kajabi page size this frame correctly -->
+<script>
+(function(){
+  var FRAME_ID = "mom-card-studio";
+  function sendHeight(){
+    var h = Math.max(
+      document.documentElement.scrollHeight,
+      document.body ? document.body.scrollHeight : 0
+    );
+    try{ parent.postMessage({ type:"resize-iframe", id:FRAME_ID, frameId:FRAME_ID, height:h }, "*"); }catch(e){}
+  }
+  window.addEventListener("load", sendHeight);
+  window.addEventListener("resize", sendHeight);
+  if(window.ResizeObserver){
+    try{ new ResizeObserver(sendHeight).observe(document.body); }catch(e){}
+  }
+  document.addEventListener("DOMContentLoaded", sendHeight);
+  setTimeout(sendHeight, 1200);
+  setTimeout(sendHeight, 3000);
+})();
+</script>
+</body>
+</html>
